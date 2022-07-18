@@ -1,0 +1,10 @@
+{
+    "license_file": "/u/aenge/freesurfer_license.txt",
+    "fd_thres": 2.4,
+    "output_spaces": [
+        "T1w",
+        "MNIPediatricAsym:cohort-2",
+        "fsnative",
+        "fsaverage"
+    ]
+}
