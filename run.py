@@ -50,8 +50,8 @@ participants_sessions = [
     for d in participant_session_dirs]
 participants_sessions.sort()
 
-# Select a subset of participants/sessions for debugging
-participants_sessions = [('SA27', '01')]
+# # Select a subset of participants/sessions for debugging
+# participants_sessions = [('SA27', '01')]
 
 # Cross-sectional surface reconstruction
 script = f'{deriv_dir}/code/s01_recon_cross.sh'
@@ -67,65 +67,43 @@ for participant, session in participants_sessions:
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-job_name = 's02_merge'
-job_id = submit_job(
-    [script, deriv_dir, *job_ids], dependency_jobs=job_ids,
-    dependency_type='afterany', log_dir=log_dir, job_name=job_name)
+args = [script, deriv_dir, *job_ids]
+job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
+                    log_dir=log_dir, job_name='s02_merge')
 
 # Compute subject-level template
 script = f'{deriv_dir}/code/s03_recon_template.sh'
 license_file = run_params['license_file']
-job_name = 's03_recon_template'
+job_ids = []
 participants = list(set([elem[0] for elem in participants_sessions]))
-job_ids = [submit_job(
-    [script, deriv_dir, remote, participant, license_file],
-    dependency_jobs=job_id, log_dir=log_dir,
-    job_name=f"{job_name}_sub-{participant}")
-    for participant in participants]
+for participant in participants:
+    args = [script, deriv_dir, remote, participant, license_file]
+    job_id = submit_job(args, dependency_jobs=job_id, log_dir=log_dir,
+                        job_name=f's03_recon_template_sub-{participant}')
+    job_ids.append(job_id)
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-job_name = 's02_merge'
-job_id = submit_job(
-    [script, deriv_dir, *job_ids], dependency_jobs=job_ids,
-    dependency_type='afterany', log_dir=log_dir, job_name=job_name)
+args = [script, deriv_dir, *job_ids]
+job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
+                    log_dir=log_dir, job_name='s02_merge')
 
-# Run fmriprep
+# Preprocessing with fmriprep
 script = f'{deriv_dir}/code/s04_fmriprep.sh'
 license_file = run_params['license_file']
 fd_thres = run_params['fd_thres']
-job_name = 's04_fmriprep'
-job_ids = [submit_job(
-    [script, deriv_dir, remote, participant, session,
-     license_file, fd_thres, *output_spaces],
-    dependency_jobs=job_id, log_dir=log_dir,
-    job_name=f"{job_name}_sub-{participant}_ses-{session}")
-    for participant, session in participants_sessions]
+job_ids = []
+for participant, session in participants_sessions:
+    args = [script, deriv_dir, remote, participant, session, license_file,
+            fd_thres, *output_spaces]
+    job_id = submit_job(
+        args,
+        # dependency_jobs=job_id,
+        log_dir=log_dir,
+        job_name=f's04_fmriprep_sub-{participant}_ses-{session}')
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-job_name = 's02_merge'
-job_id = submit_job(
-    [script, deriv_dir, *job_ids], dependency_jobs=job_ids,
-    dependency_type='afterany', log_dir=log_dir, job_name=job_name)
-
-# # Run preprocessing with afni_proc
-# script = f'{deriv_dir}/code/s01_afni_proc.sh'
-# task_label = run_params['task_label']
-# non_stationary_trs = run_params['non_stationary_trs']
-# blur_size = run_params['blur_size']
-# regress_censor_motion = run_params['regress_censor_motion']
-# gltsym_contrast = run_params['gltsym_contrast']
-# job_name = 's01_afni_proc'
-# job_ids = [submit_job(
-#     [script, deriv_dir, remote, participant, session, task_label,
-#      non_stationary_trs, blur_size, regress_censor_motion, gltsym_contrast],
-#     log_dir=log_dir, job_name=f"{job_name}_sub-{participant}_ses-{session}")
-#     for participant, session in participants_sessions]
-
-# # Merge branches back into the dataset once they've finished
-# script = f'{deriv_dir}/code/s02_merge.sh'
-# job_name = 's02_merge'
-# job_id = submit_job(
-#     [script, deriv_dir, *job_ids], dependency_jobs=job_ids,
-#     dependency_type='afterany', log_dir=log_dir, job_name=job_name)
+args = [script, deriv_dir, *job_ids]
+job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
+                    log_dir=log_dir, job_name='s02_merge')

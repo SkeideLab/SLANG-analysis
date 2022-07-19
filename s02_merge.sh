@@ -29,7 +29,7 @@ done
 
 # Python command to update Dataset description later
 # Field PipelineDescription was missing
-dataset_file="$deriv_dir"/dataset_description.json
+dataset_file="$deriv_dir/fmriprep/dataset_description.json"
 PYCMD=$(
     cat <<EOF
 import json

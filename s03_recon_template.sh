@@ -33,34 +33,30 @@ datalad get --no-data "$deriv_name"
 git -C "$deriv_name" checkout -b "job-$SLURM_JOB_ID"
 
 # Make sure that BIDS metadata is available
-datalad get -d . \
+datalad --on-failure ignore get --dataset . \
     sub-*/ses-*/*.json \
-    sub-*/ses-*/*/*.json \
-    code/qc/sub-*/ses-*/*/*.json
+    sub-*/ses-*/*/*.json
 
 # Make sure that cross-sectional surfaces are available
 freesurfer_dir="$deriv_name/freesurfer"
 datalad get "$freesurfer_dir/sub-${participant_label}_ses-"*
 
 # Copy license file so that it's available inside the container
-job_license_file="$deriv_name/code/freesurfer_license.txt"
+job_license_file="freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
-
-# Create home directory for temporary files
-mkdir .home/
 
 # Prepare surface reconstruction
 datalad containers-run \
-    --container-name "$deriv_name/freesurfer" \
+    --container-name "$deriv_name/code/containers/bids-freesurfer" \
     --input "$freesurfer_dir/sub-${participant_label}_ses-*" \
     --output "$freesurfer_dir/sub-$participant_label" \
     --message "Create subject-level template" \
     --explicit "\
-/data /data/$freesurfer_dir participant \
+$job_dir $freesurfer_dir participant \
 --participant_label $participant_label \
 --n_cpus $SLURM_CPUS_PER_TASK \
 --steps template \
---license_file /data/$job_license_file \
+--license_file $job_license_file \
 --skip_bids_validator \
 --3T true"
 

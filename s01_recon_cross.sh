@@ -35,17 +35,12 @@ git -C "$deriv_name" checkout -b "job-$SLURM_JOB_ID"
 
 # Make sure that BIDS metadata is available
 datalad --on-failure ignore get --dataset . \
-  sub-*/ses-*/*.json \
-  sub-*/ses-*/*/*.json
+    sub-*/ses-*/*.json \
+    sub-*/ses-*/*/*.json
 
 # Copy license file so that it's available inside the container
-code_dir="$deriv_name/code"
-mkdir -p "$code_dir"
-job_license_file="$code_dir/freesurfer_license.txt"
+job_license_file="freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
-
-# Create home directory for temporary files
-mkdir .home/
 
 # Prepare output directory
 freesurfer_dir="$deriv_name/freesurfer"
@@ -58,12 +53,12 @@ datalad containers-run \
     --output "$freesurfer_dir" \
     --message "Cross-sectional surface reconstruction" \
     --explicit "\
-/data /data/$freesurfer_dir participant \
+$job_dir $freesurfer_dir participant \
 --participant_label $participant_label \
 --session_label $session_label \
 --n_cpus $SLURM_CPUS_PER_TASK \
 --steps cross-sectional \
---license_file /data/$job_license_file \
+--license_file $job_license_file \
 --skip_bids_validator \
 --3T true"
 
