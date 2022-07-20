@@ -59,11 +59,10 @@ license_file = run_params['license_file']
 job_ids = []
 for participant, session in participants_sessions:
     args = [script, deriv_dir, remote, participant, session, license_file]
-    job_id = submit_job(
-        args,
-        job_name=f's01_recon_cross_sub-{participant}_ses-{session}',
+    this_job_id = submit_job(
+        args, job_name=f's01_recon_cross_sub-{participant}_ses-{session}',
         log_dir=log_dir)
-    job_ids.append(job_id)
+    job_ids.append(this_job_id)
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
@@ -78,9 +77,10 @@ job_ids = []
 participants = list(set([elem[0] for elem in participants_sessions]))
 for participant in participants:
     args = [script, deriv_dir, remote, participant, license_file]
-    job_id = submit_job(args, dependency_jobs=job_id, log_dir=log_dir,
-                        job_name=f's03_recon_template_sub-{participant}')
-    job_ids.append(job_id)
+    this_job_id = submit_job(
+        args, dependency_jobs=job_id, log_dir=log_dir,
+        job_name=f's03_recon_template_sub-{participant}')
+    job_ids.append(this_job_id)
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
@@ -96,11 +96,10 @@ job_ids = []
 for participant, session in participants_sessions:
     args = [script, deriv_dir, remote, participant, session, license_file,
             fd_thres, *output_spaces]
-    job_id = submit_job(
-        args,
-        # dependency_jobs=job_id,
-        log_dir=log_dir,
+    this_job_id = submit_job(
+        args, dependency_jobs=job_id, log_dir=log_dir,
         job_name=f's04_fmriprep_sub-{participant}_ses-{session}')
+    job_ids.append(this_job_id)
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
