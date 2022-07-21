@@ -42,7 +42,7 @@ datalad --on-failure ignore get --dataset . \
   sub-*/ses-*/*/*.json
 
 # Copy license file so that it's available inside the container
-job_license_file="freesurfer_license.txt"
+job_license_file="$job_dir/freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
 
 # Copy templates so they are available to the container
@@ -105,6 +105,15 @@ $job_dir $fmriprep_dir participant \
 --stop-on-first-crash \
 --notrack"
 
+# Re-name QC report to prevent merge conflicts
+old_html_file="$fmriprep_dir/sub-$participant.html"
+new_html_file="$fmriprep_dir/sub-${participant}_ses-$session.html"
+mv "$old_html_file" "$new_html_file"
+datalad save \
+  --dataset "$job_dir/$deriv_name" \
+  --message "Rename fMRIprep report to include session info" \
+  "$old_html_file" "$new_html_file"
+
 # Push large files to the RIA store
 # Does not need a lock, no interaction with Git
 datalad push --dataset "$job_dir/$deriv_name" --to output-storage
@@ -115,7 +124,7 @@ git -C "$job_dir/$deriv_name" remote add outputstore "$remote"
 flock --verbose "$lockfile" git -C "$job_dir/$deriv_name" push outputstore
 
 # Clean up everything
-chmod -R +wrx "$job_dir" "$work_dir"
+chmod -R +w "$job_dir" "$work_dir"
 rm -rf "$job_dir" "$work_dir"
 
 # And we're done
