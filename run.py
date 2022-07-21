@@ -66,7 +66,9 @@ for participant, session in participants_sessions:
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-args = [script, deriv_dir, *job_ids]
+pipeline_dir = deriv_dir / 'freesurfer'
+pipeline_description = 'FreeSurfer'
+args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='s02_merge')
 
@@ -84,7 +86,9 @@ for participant in participants:
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-args = [script, deriv_dir, *job_ids]
+pipeline_dir = deriv_dir / 'freesurfer'
+pipeline_description = 'FreeSurfer'
+args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='s02_merge')
 
@@ -103,6 +107,8 @@ for participant, session in participants_sessions:
 
 # Merge branches back into the dataset once they've finished
 script = f'{deriv_dir}/code/s02_merge.sh'
-args = [script, deriv_dir, *job_ids]
+pipeline_dir = deriv_dir / 'fmriprep'
+pipeline_description = 'fMRIPrep'
+args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='s02_merge')

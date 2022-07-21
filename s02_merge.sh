@@ -5,7 +5,9 @@ set -e -u -x
 
 # Parse arguments from the job scheduler as variables
 deriv_dir=$1
-shift
+pipeline_dir=$2
+pipeline_description=$3
+shift 3
 merge_job_ids=("$@")
 
 # Go into the dataset directory
@@ -27,18 +29,21 @@ for job_id in "${merge_job_ids[@]}"; do
     fi
 done
 
-# Python command to update Dataset description later
-# Field PipelineDescription was missing
-dataset_file="$deriv_dir/fmriprep/dataset_description.json"
+# Python command to update JSON file with dataset description
+# Since downstram programs (e.g., pyBIDS) will expect this field
+description_file="$pipeline_dir/dataset_description.json"
 PYCMD=$(
     cat <<EOF
 import json
-f=open('$dataset_file')
-data=json.load(f)
-data['PipelineDescription']={'Name': 'fMRIprep'}
-f.close()
-f=open('$dataset_file',mode='w')
-json_object=json.dumps(data,indent=4)
+try:
+    f = open('$description_file')
+    data = json.load(f)
+    f.close()
+except:
+    data = {}
+data['PipelineDescription'] = {'Name': '$pipeline_description'}
+json_object = json.dumps(data, indent=4)
+f = open('$description_file', mode='w+')
 f.write(json_object)
 f.close()
 EOF
@@ -55,9 +60,9 @@ if [ -n "$local_branches" ]; then
     # Save changes in BIDS superdataset
     datalad save -m "Update derivatives" -d .. .
 
-    # # Update dataset description file
-    # python3 -c "$PYCMD"
-    # datalad save -m "Update dataset description" -d .. .
+    # Update dataset description file
+    python3 -c "$PYCMD"
+    datalad save -m "Update dataset description" -d .. "$description_file"
 
 fi
 
