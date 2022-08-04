@@ -1,6 +1,6 @@
 from pathlib import Path
+from os import environ
 
-import templateflow.api as tflow
 from simple_slurm import Slurm
 
 
@@ -20,14 +20,18 @@ def add_container(ds, name, url, bids_path='.'):
         ds.containers_add(name, url, call_fmt=call_fmt, update=True)
 
 
-def get_templates(templates):
+def get_templates(templates, bids_ds):
     """Downlaods standard templates form templateflow into the dataset
-
     Parameters
     ----------
     templates : list
         A list of template names (may include nonstandard templates).
     """
+
+    # Initialize templateflow directory
+    templateflow_dir = Path(bids_ds.path) / 'derivatives/templateflow'
+    environ['TEMPLATEFLOW_HOME'] = str(templateflow_dir)
+    import templateflow.api as tflow
 
     # Make sure the default templates needed for fmriprep are always present
     fmriprep_templates = ['OASIS30ANTs', 'MNI152NLin2009cAsym']
@@ -45,6 +49,10 @@ def get_templates(templates):
 
             # Actually download the template(s)
             _ = tflow.get(template, raise_empty=True)
+
+    # Save changes
+    bids_ds.save(
+        templateflow_dir, message='Initialize/update templateflow templates')
 
 
 def submit_job(args_list, cpus=8, mem=32000, time='24:00:00', log_dir='logs/',

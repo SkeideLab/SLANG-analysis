@@ -45,13 +45,10 @@ datalad --on-failure ignore get --dataset . \
 job_license_file="$job_dir/freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
 
-# Copy templates so they are available to the container
-datalad get --no-data "$deriv_name/code" "$deriv_name/code/containers"
-user_template_dir="$HOME/.cache/templateflow"
-job_template_dir="$job_dir/derivatives/code/containers/binds/HOME/.cache/templateflow"
-mkdir "$deriv_name/code/containers/binds/HOME/.cache"
-cp -r "$user_template_dir" "$job_template_dir"
-export SINGULARITYENV_TEMPLATEFLOW_HOME="$job_template_dir"
+# Make sure that fMRIPrep finds pre-downloaded templates
+templateflow_dir="$job_dir/$deriv_name/templateflow"
+datalad get --dataset "$deriv_name" "$templateflow_dir"
+export SINGULARITYENV_TEMPLATEFLOW_HOME="$templateflow_dir"
 
 # Create pyBIDS filter so that we can process one session at a time
 filter_string='{"t1w":{"datatype":"anat","session":"'"$session"'","suffix":"T1w"},"bold":{"datatype":"func","session":"'"$session"'","suffix":"bold"}}'
@@ -96,7 +93,7 @@ $job_dir $fmriprep_dir participant \
 --participant-label $participant \
 --nprocs $SLURM_CPUS_PER_TASK \
 --mem $SLURM_MEM_PER_NODE \
---output-spaces ${output_spaces[*]} \
+--output-spaces ${output_spaces[*]} sub$participant \
 --random-seed 12345 \
 --fd-spike-threshold $fd_thres \
 --fs-license-file $job_license_file \

@@ -41,7 +41,7 @@ deriv_ds.get(containers_dict.values())
 
 # Download standard templates so they are available for the batch jobs
 output_spaces = run_params['output_spaces']
-get_templates(output_spaces)
+get_templates(output_spaces, bids_ds)
 
 # Extract participant and session labels from directory structure
 participant_session_dirs = list(bids_dir.glob('sub-*/ses-*/'))
