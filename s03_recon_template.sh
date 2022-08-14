@@ -45,11 +45,16 @@ datalad get "$freesurfer_dir/sub-${participant_label}_ses-"*
 job_license_file="freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
 
+# Remove old template or FreeSurfer won't recompute it
+template_dir="$freesurfer_dir/sub-$participant_label"
+chmod -R +w "$template_dir"
+rm -rf "$template_dir"
+
 # Prepare surface reconstruction
 datalad containers-run \
     --container-name "$deriv_name/code/containers/bids-freesurfer" \
     --input "$freesurfer_dir/sub-${participant_label}_ses-*" \
-    --output "$freesurfer_dir/sub-$participant_label" \
+    --output "$template_dir" \
     --message "Create subject-level template" \
     --explicit "\
 $job_dir $freesurfer_dir participant \
