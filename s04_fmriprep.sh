@@ -86,7 +86,7 @@ $job_dir $fmriprep_dir participant \
 --participant-label $participant \
 --nprocs $SLURM_CPUS_PER_TASK \
 --mem $SLURM_MEM_PER_NODE \
---output-spaces ${output_spaces[*]} sub$participant \
+--output-spaces ${output_spaces[*]} \
 --random-seed 12345 \
 --fd-spike-threshold $fd_thres \
 --fs-license-file $job_license_file \
