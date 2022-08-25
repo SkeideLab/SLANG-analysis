@@ -55,14 +55,6 @@ filter_string='{"t1w":{"datatype":"anat","session":"'"$session"'","suffix":"T1w"
 filter_file="$job_dir/$deriv_name/bids_filter.json"
 echo "$filter_string" >"$filter_file"
 
-# Link pre-computed FreeSurfer data
-datalad get "$deriv_name/freesurfer/sub-${participant}_ses-${session}"
-fmriprep_dir="$job_dir/$deriv_name/fmriprep"
-fs_subjects_dir="$fmriprep_dir/sourcedata/freesurfer"
-mkdir -p "$fs_subjects_dir"
-ln -s "../../../freesurfer/sub-${participant}_ses-${session}" \
-  "$fs_subjects_dir/sub-${participant}"
-
 # Make sure previous fmriprep data from this subject is available
 datalad --on-failure ignore get "$fmriprep_dir/sub-$participant/figures"
 
@@ -76,7 +68,6 @@ datalad containers-run \
   --container-name "$deriv_name/code/containers/bids-fmriprep" \
   --dataset "$job_dir" \
   --input "$job_dir/sub-$participant" \
-  --input "$fs_subjects_dir" \
   --input "$job_dir/dataset_description.json" \
   --input "$filter_file" \
   --output "$fmriprep_dir/sub-${participant}" \
@@ -97,7 +88,6 @@ $job_dir $fmriprep_dir participant \
 --random-seed 12345 \
 --fd-spike-threshold $fd_thres \
 --fs-license-file $job_license_file \
---fs-subjects-dir $fs_subjects_dir \
 --work-dir $work_dir \
 --stop-on-first-crash \
 --notrack"
