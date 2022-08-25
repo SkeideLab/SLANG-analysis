@@ -55,9 +55,10 @@ filter_string='{"t1w":{"datatype":"anat","session":"'"$session"'","suffix":"T1w"
 filter_file="$job_dir/$deriv_name/bids_filter.json"
 echo "$filter_string" >"$filter_file"
 
+fmriprep_dir="$job_dir/$deriv_name/fmriprep"
 # Make sure previous fmriprep data from this subject is available
 datalad --on-failure ignore get "$fmriprep_dir/sub-$participant/figures"
-fmriprep_dir="$job_dir/$deriv_name/fmriprep"
+
 
 # Start the job from the parent directory
 # So that we can have the `work_dir` outside the `job_dir`
