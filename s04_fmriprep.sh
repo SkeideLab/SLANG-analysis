@@ -57,6 +57,7 @@ echo "$filter_string" >"$filter_file"
 
 # Make sure previous fmriprep data from this subject is available
 datalad --on-failure ignore get "$fmriprep_dir/sub-$participant/figures"
+fmriprep_dir="$job_dir/$deriv_name/fmriprep"
 
 # Start the job from the parent directory
 # So that we can have the `work_dir` outside the `job_dir`
