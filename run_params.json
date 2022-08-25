@@ -1,5 +1,5 @@
 {
-    "license_file": "/u/aenge/freesurfer_license.txt",
+    "license_file": "/u/akieslinger/.freesurfer.txt",
     "fd_thres": 2.4,
     "output_spaces": [
         "T1w",
