@@ -50,11 +50,11 @@ template_dir="$freesurfer_dir/sub-$participant_label"
 chmod -R +w "$template_dir"
 rm -rf "$template_dir"
 
-# Prepare surface reconstruction
+# Create longitudinal subject-level template
 datalad containers-run \
     --container-name "$deriv_name/code/containers/bids-freesurfer" \
     --input "$freesurfer_dir/sub-${participant_label}_ses-*" \
-    --output "$template_dir" \
+    --output "$template_dir/" \
     --message "Create subject-level template" \
     --explicit "\
 $job_dir $freesurfer_dir participant \

@@ -43,14 +43,15 @@ job_license_file="freesurfer_license.txt"
 cp "$license_file" "$job_license_file"
 
 # Prepare output directory
-freesurfer_dir="$deriv_name/freesurfer"
+freesurfer_dir="$job_dir/$deriv_name/freesurfer"
 mkdir -p "$freesurfer_dir"
 
-# Prepare surface reconstruction
+# Run surface reconstruction
+output_dir="$freesurfer_dir/sub-${participant_label}_ses-$session_label"
 datalad containers-run \
     --container-name "$deriv_name/code/containers/bids-freesurfer" \
     --input "sub-$participant_label/ses-$session_label/" \
-    --output "$freesurfer_dir" \
+    --output "$output_dir/" \
     --message "Cross-sectional surface reconstruction" \
     --explicit "\
 $job_dir $freesurfer_dir participant \
