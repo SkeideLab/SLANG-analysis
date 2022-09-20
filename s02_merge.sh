@@ -61,7 +61,9 @@ if [ -n "$local_branches" ]; then
     datalad save -m "Update derivatives" -d .. .
 
     # Update dataset description file
-    datalad unlock --on-failure ignore "$description_file"
+    if test -f "$description_file"; then
+        datalad unlock "$description_file"
+    fi
     python3 -c "$PYCMD"
     datalad save -m "Update dataset description" -d .. "$description_file"
 
