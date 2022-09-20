@@ -25,7 +25,8 @@ log_dir = deriv_dir / 'code' / 'logs'
 ria_dir = bids_dir / '.outputstore'
 if not ria_dir.exists():
     ria_url = f'ria+file://{ria_dir}'
-    deriv_ds.create_sibling_ria(ria_url, name='output', alias='derivatives')
+    deriv_ds.create_sibling_ria(
+        ria_url, name='output', alias='derivatives', new_store_ok=True)
     deriv_ds.push(to='output')
 
 # Find path of the dataset in the outputstore
@@ -42,6 +43,17 @@ deriv_ds.get(containers_dict.values())
 # Download standard templates so they are available for the batch jobs
 output_spaces = run_params['output_spaces']
 get_templates(output_spaces, bids_ds)
+
+# Make sure the output store is up to date
+# Otherwise there might be an error when pushing results back from the
+# batch jobs
+_ = deriv_ds.push(to='output')
+_ = deriv_ds.push(to='output-storage')
+
+# # An additional garbage collection in the outputstore might also be useful
+# # but can take a couple of minutes (this requires the gitpython package)
+# from git import Repo
+# _ = Repo(remote).git.gc()
 
 # Extract participant and session labels from directory structure
 participant_session_dirs = list(bids_dir.glob('sub-*/ses-*/'))
