@@ -44,6 +44,17 @@ deriv_ds.get(containers_dict.values())
 output_spaces = run_params['output_spaces']
 get_templates(output_spaces, bids_ds)
 
+# Make sure the output store is up to date
+# Otherwise there might be an error when pushing results back from the
+# batch jobs
+_ = deriv_ds.push(to='output')
+_ = deriv_ds.push(to='output-storage')
+
+# # An additional garbage collection in the outputstore might also be useful
+# # but can take a couple of minutes (this requires the gitpython package)
+# from git import Repo
+# _ = Repo(remote).git.gc()
+
 # Extract participant and session labels from directory structure
 participant_session_dirs = list(bids_dir.glob('sub-*/ses-*/'))
 participants_sessions = [
