@@ -20,7 +20,7 @@ def add_container(ds, name, url, bids_path='.'):
         ds.containers_add(name, url, call_fmt=call_fmt, update=True)
 
 
-def get_templates(templates, bids_ds):
+def get_templates(templates, bids_ds, deriv_name):
     """Downlaods standard templates form templateflow into the dataset
     Parameters
     ----------
@@ -29,7 +29,7 @@ def get_templates(templates, bids_ds):
     """
 
     # Initialize templateflow directory
-    templateflow_dir = Path(bids_ds.path) / 'derivatives/templateflow'
+    templateflow_dir = Path(bids_ds.path) / deriv_name / 'templateflow'
     environ['TEMPLATEFLOW_HOME'] = str(templateflow_dir)
     import templateflow.api as tflow
 
