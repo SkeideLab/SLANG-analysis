@@ -37,7 +37,7 @@ Scripts for preprocessing fMRI data
 
 ## Usage
 
-1. Update your study-specific preprocessing options in the [`run_params.json`](`run_params.json`) file in the `derivatives/code` directory.
+1. Update your study-specific preprocessing options in the [`run_params.json`](run_params.json) file in the `derivatives/code` directory.
 Currently supported options for this pipeline are:
 
     | Parameter         | Meaning                                           | Example value                 |
