@@ -3,7 +3,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 
-Scripts for preprocessing cross-sectional and longitudinal fMRI data
+Scripts for preprocessing fMRI data
 
 ## Installation
 
@@ -37,19 +37,20 @@ Scripts for preprocessing cross-sectional and longitudinal fMRI data
 
 ## Usage
 
-1. Update your study-specific preprocessing options in the `run_params.json` file in the `derivatives/code` director.
+1. Update your study-specific preprocessing options in the [`run_params.json`](`run_params.json`) file in the `derivatives/code` directory.
 Currently supported options for this pipeline are:
 
     | Parameter         | Meaning                                           | Example value                 |
     | ----------------- | ------------------------------------------------- | ----------------------------- |
-    | `"license_file"`  | Path of your FreeSurfer license file              | `"/u/username/license.txt"`   |
-    | `"fd_thres"`      | [FD][1] threshold for marking volumes as outliers | `2.4` (2.4 mm, ~1 voxel size) |
-    | `"output_spaces"` | Desired [standard/non-standard output spaces][2]  | `["T1w", "fsaverage"]`        |
+    | `"license_file"`  | Path of your [FreeSurfer license file][1]         | `"/u/username/license.txt"`   |
+    | `"fd_thres"`      | [FD][2] threshold for marking volumes as outliers | `2.4` (2.4 mm, ~1 voxel size) |
+    | `"output_spaces"` | Desired [standard/non-standard output spaces][3]  | `["T1w", "fsaverage"]`        |
 
 2. Run the [`run.py`](run.py) script in the `derivatives/code` directory, either from the command line (`python3 run.py`) or code-cell for code-cell using the [interactive Python window](https://code.visualstudio.com/docs/python/jupyter-support-py) in VS Code
 
-[1]: https://mriqc.readthedocs.io/en/latest/iqms/bold.html#measures-for-artifacts-and-other
-[2]: https://fmriprep.org/en/stable/spaces.html
+[1]: https://surfer.nmr.mgh.harvard.edu/registration.html
+[2]: https://mriqc.readthedocs.io/en/latest/iqms/bold.html#measures-for-artifacts-and-other
+[3]: https://fmriprep.org/en/stable/spaces.html
 
 ## Processing details
 
