@@ -15,7 +15,7 @@ from pathlib import Path
 
 from datalad.api import Dataset
 
-from helpers import get_templates, submit_job
+from scripts.helpers import get_templates, submit_job
 
 # %% [markdown]
 # ## 2. Find DataLad datasets
@@ -114,7 +114,7 @@ participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
 # this script).
 
 # %%
-script = f'{deriv_dir}/code/s04_fmriprep.sh'
+script = code_dir / 'scripts/fmriprep.sh'
 license_file = run_params['license_file']
 fd_thres = run_params['fd_thres']
 job_ids = []
@@ -134,7 +134,7 @@ for participant in participants:
 # participant-specific jobs from the last step having finished.
 
 # %%
-script = f'{deriv_dir}/code/s02_merge.sh'
+script = code_dir / 'scripts/merge.sh'
 pipeline_dir = deriv_dir / 'fmriprep'
 pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
