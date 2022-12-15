@@ -50,28 +50,23 @@ templateflow_dir="$job_dir/$deriv_name/templateflow"
 datalad get --dataset "$deriv_name" "$templateflow_dir"
 export SINGULARITYENV_TEMPLATEFLOW_HOME="$templateflow_dir"
 
-# Create pyBIDS filter so that we can process one session at a time
-filter_string='{"t1w":{"datatype":"anat","session":"'"$session"'","suffix":"T1w"},"bold":{"datatype":"func","session":"'"$session"'","suffix":"bold"}}'
-filter_file="$job_dir/$deriv_name/bids_filter.json"
-echo "$filter_string" >"$filter_file"
-
-fmriprep_dir="$job_dir/$deriv_name/fmriprep"
 # Make sure previous fmriprep data from this subject is available
+fmriprep_dir="$job_dir/$deriv_name/fmriprep"
 datalad --on-failure ignore get "$fmriprep_dir/sub-$participant/figures"
-
 
 # Start the job from the parent directory
 # So that we can have the `work_dir` outside the `job_dir`
 cd "$tmp_dir"
 work_dir="$tmp_dir/work_job_$SLURM_JOB_ID"
 
-# Run fmriprep
+# Run fMRIPrep
+# Note that the `--longitudinal` flag also works for cross-sectional
+# processing (it only takes effect with > 3 anatomical image sessions)
 datalad containers-run \
   --container-name "$deriv_name/code/containers/bids-fmriprep" \
   --dataset "$job_dir" \
   --input "$job_dir/sub-$participant" \
   --input "$job_dir/dataset_description.json" \
-  --input "$filter_file" \
   --output "$fmriprep_dir/sub-${participant}" \
   --output "$fmriprep_dir/sourcedata/freesurfer/sub-${participant}" \
   --output "$fmriprep_dir/.bidsignore" \
@@ -83,10 +78,10 @@ datalad containers-run \
   --explicit "\
 $job_dir $fmriprep_dir participant \
 --skip_bids_validation \
---bids-filter-file $filter_file \
 --participant-label $participant \
 --nprocs $SLURM_CPUS_PER_TASK \
 --mem $SLURM_MEM_PER_NODE \
+--longitudinal \
 --output-spaces ${output_spaces[*]} \
 --random-seed 12345 \
 --fd-spike-threshold $fd_thres \
