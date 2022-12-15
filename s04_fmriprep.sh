@@ -7,10 +7,9 @@ set -e -u -x
 deriv_dir=$1
 remote=$2
 participant=$3
-session=$4
-license_file=$5
-fd_thres=$6
-shift 6
+license_file=$4
+fd_thres=$5
+shift 5
 output_spaces=("$@")
 
 # Load Singularity for running containerized commands
@@ -89,15 +88,6 @@ $job_dir $fmriprep_dir participant \
 --work-dir $work_dir \
 --stop-on-first-crash \
 --notrack"
-
-# Re-name QC report to prevent merge conflicts
-old_html_file="$fmriprep_dir/sub-$participant.html"
-new_html_file="$fmriprep_dir/sub-${participant}_ses-$session.html"
-mv "$old_html_file" "$new_html_file"
-datalad save \
-  --dataset "$job_dir/$deriv_name" \
-  --message "Rename fMRIprep report to include session info" \
-  "$old_html_file" "$new_html_file"
 
 # Push large files to the RIA store
 # Does not need a lock, no interaction with Git

@@ -1,3 +1,15 @@
+# %% [markdown]
+# # fMRIPrep pipeline
+#
+# Welcome to our fMRI preprocessing pipeline using [fMRIPrep][1]! This Python
+# script will guide you to all the steps that you need for preprocessing your
+# data. It will work for both cross-sectional and longitudinal data, as long
+# as they are in BIDS format with subject- (and optionally session-)specific
+# sub-directories.
+#
+# ## 1. Load modules and helper functions
+
+# %%
 import json
 from pathlib import Path
 
@@ -5,122 +17,134 @@ from datalad.api import Dataset
 
 from helpers import get_templates, submit_job
 
-# Read study-specific inputs from `run_params.json`
-with open(f'{Path(__file__).parent.resolve()}/run_params.json', 'r') as fp:
-    run_params = json.load(fp)
+# %% [markdown]
+# ## 2. Find DataLad datasets
+#
+# We automatically detect the **BIDS derivatives dataset** (where preprocessing
+# outputs are to be stored) based on the location of the current file. We also
+# detect the **BIDS dataset** as the parent directory of the derivatives
+# dataset. Finally, we load the study-specific preprocessing parameters that
+# are specified in the [`run_params.json`](run_params.json) file.
 
-# Find derivatives Dataset
-deriv_dir = Path(__file__).parent.parent.resolve()
+# %%
+code_dir = Path(__file__).parent.resolve()
+log_dir = code_dir / 'logs'
+
+deriv_dir = code_dir.parent
 deriv_ds = Dataset(deriv_dir)
 deriv_name = deriv_dir.name
 
-# Find BIDS Dataset
 bids_dir = deriv_dir.parent
 bids_ds = Dataset(bids_dir)
 
-# Define directory for SLURM batch job log files
-log_dir = deriv_dir / 'code' / 'logs'
+with open(code_dir / 'run_params.json', 'r') as fp:
+    run_params = json.load(fp)
 
-# Create outputstore to store intermediate results from batch jobs
+# %% [markdown]
+# ## 3. Download containers
+#
+# The software tools for preprocessing are provided as [Singularity
+# containers][2]. Since the batch jobs don't have access to the internet, we
+# need to download the relevant containers beforehand. This is done via the
+# [ReproNim containers subdataset][3].
+
+# %%
+code_dir_name = Path(__file__).parent.name
+containers_path = code_dir_name + '/containers/images/'
+containers_dict = {
+    'fmriprep': containers_path + 'bids/bids-fmriprep--21.0.2.sing'}
+_ = deriv_ds.get(containers_dict.values())
+
+# %% [markdown]
+# ## 4. Download templates
+#
+# Like the software containers, any standard brain templates that are needed
+# during preprocessing by fMRIPrep need to be pre-downloaded from
+# [TemplateFlow][4] so that they are available to the batch jobs.
+
+# %%
+output_spaces = run_params['output_spaces']
+get_templates(output_spaces, bids_ds, deriv_name)
+
+# %% [markdown]
+# ## 5. Create or find output store
+#
+# The [reproducible DataLad workflow][5] that we are using requires an
+# intermediate copy of the derivatives dataset, which is used for pushing the
+# results from individual batch jobs (typically preprocessing data from a
+# single participant) into the same dataset. This intermediate dataset is
+# called the **output store** and is in [RIA format][6]. Here we create this
+# RIA output store (if it doesn't exist) and retrieve it's address so that we
+# can pass it to the batch jobs. We also make sure that the output store is up
+# to date with the the main derivatives dataset by pushing to it.
+
+# %%
 ria_dir = bids_dir / '.outputstore'
 if not ria_dir.exists():
     ria_url = f'ria+file://{ria_dir}'
     deriv_ds.create_sibling_ria(
         ria_url, name='output', alias='derivatives', new_store_ok=True)
-    deriv_ds.push(to='output')
 
-# Find path of the dataset in the outputstore
 remote = deriv_ds.siblings(name='output')[0]['url']
 
-# Make sure that containers are available for the batch jobs
-code_dir_name = Path(__file__).parent.name
-containers_path = code_dir_name + '/containers/images/'
-containers_dict = {
-    'freesurfer': containers_path + 'bids/bids-freesurfer--6.0.1-6.1.sing',
-    'fmriprep': containers_path + 'bids/bids-fmriprep--21.0.2.sing'}
-deriv_ds.get(containers_dict.values())
-
-# Download standard templates so they are available for the batch jobs
-output_spaces = run_params['output_spaces']
-get_templates(output_spaces, bids_ds)
-
-# Make sure the output store is up to date
-# Otherwise there might be an error when pushing results back from the
-# batch jobs
 _ = deriv_ds.push(to='output')
 _ = deriv_ds.push(to='output-storage')
+# _ = Repo(remote).git.gc() # Takes a couple of minutes, usually not necessary
 
-# # An additional garbage collection in the outputstore might also be useful
-# # but can take a couple of minutes (this requires the gitpython package)
-# from git import Repo
-# _ = Repo(remote).git.gc()
+# %% [markdown]
+# ## 6. Extract participant labels
+#
+# Here we retrieve all the available participant labels based on the BIDS
+# directory structure. If you only want to process a subset of subjects, you
+# can overwrite the `participants` variable with a cusomt list of subjects.
 
-# Extract participant and session labels from directory structure
-participant_session_dirs = list(bids_dir.glob('sub-*/ses-*/'))
-participants_sessions = [
-    (d.parent.name.replace('sub-', ''), d.name.replace('ses-', ''))
-    for d in participant_session_dirs]
-participants_sessions.sort()
+# %%
+participant_dirs = list(bids_dir.glob('sub-*/'))
+participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
+# participants = ['SA27', 'SO18']  # Custom selection for debugging
 
-# # Select a subset of participants/sessions for debugging
-# participants_sessions = [('SA27', '01')]
+# %% [markdown]
+# ## 7. Run fMRIPrep
+#
+# Here we actually run the preprocessing with fMRIPrep. Each subject
+# (with all its sessions) is processed in a separate batch job, submitted via
+# the `sbatch` command in the SLURM scheduling system. For the details of what
+# happens inside each batch job and how we parameterize fMRIPrep, please check
+# out the shell script that is referenced below (it's in the same directiry as
+# this script).
 
-# # Cross-sectional surface reconstruction
-# script = f'{deriv_dir}/code/s01_recon_cross.sh'
-# license_file = run_params['license_file']
-# job_ids = []
-# for participant, session in participants_sessions:
-#     args = [script, deriv_dir, remote, participant, session, license_file]
-#     this_job_id = submit_job(
-#         args, job_name=f's01_recon_cross_sub-{participant}_ses-{session}',
-#         log_dir=log_dir)
-#     job_ids.append(this_job_id)
-
-# # Merge branches back into the dataset once they've finished
-# script = f'{deriv_dir}/code/s02_merge.sh'
-# pipeline_dir = deriv_dir / 'freesurfer'
-# pipeline_description = 'FreeSurfer'
-# args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
-# job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
-#                     log_dir=log_dir, job_name='s02_merge')
-
-# # Compute subject-level template
-# script = f'{deriv_dir}/code/s03_recon_template.sh'
-# license_file = run_params['license_file']
-# job_ids = []
-# participants = list(set([elem[0] for elem in participants_sessions]))
-# for participant in participants:
-#     args = [script, deriv_dir, remote, participant, license_file]
-#     this_job_id = submit_job(
-#         args, dependency_jobs=job_id, log_dir=log_dir,
-#         job_name=f's03_recon_template_sub-{participant}')
-#     job_ids.append(this_job_id)
-
-# # Merge branches back into the dataset once they've finished
-# script = f'{deriv_dir}/code/s02_merge.sh'
-# pipeline_dir = deriv_dir / 'freesurfer'
-# pipeline_description = 'FreeSurfer'
-# args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
-# job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
-#                     log_dir=log_dir, job_name='s02_merge')
-
-# Preprocessing with fmriprep
+# %%
 script = f'{deriv_dir}/code/s04_fmriprep.sh'
 license_file = run_params['license_file']
 fd_thres = run_params['fd_thres']
 job_ids = []
-for participant, session in participants_sessions:
-    args = [script, deriv_dir, remote, participant, session, license_file,
-            fd_thres, *output_spaces]
-    this_job_id = submit_job(
-        args, log_dir=log_dir,
-        job_name=f's04_fmriprep_sub-{participant}_ses-{session}')
+for participant in participants:
+    args = [script, deriv_dir, remote, participant,
+            license_file, fd_thres, *output_spaces]
+    job_name = f's04_fmriprep_sub-{participant}'
+    this_job_id = submit_job(args, log_dir=log_dir, job_name=job_name)
     job_ids.append(this_job_id)
 
-# Merge branches back into the dataset once they've finished
+# %% [markdown]
+# ## 8. Merge job branches
+#
+# After each preprocessing step, we merge the job-specific branches with the
+# preprocessed results from the output store back into the main derivatives
+# dataset. This is implemented via another batch job that depends on all
+# participant-specific jobs from the last step having finished.
+
+# %%
 script = f'{deriv_dir}/code/s02_merge.sh'
 pipeline_dir = deriv_dir / 'fmriprep'
 pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='s02_merge')
+
+# %% [markdown]
+# [1]: https://fmriprep.org/en/stable/index.html
+# [2]: http://handbook.datalad.org/en/latest/basics/101-133-containersrun.html
+# [3]: https://github.com/ReproNim/containers
+# [4]: https://www.templateflow.org
+# [5]: https://doi.org/10.1038/s41597-022-01163-2
+# [6]: https://handbook.datalad.org/en/latest/beyond_basics/101-147-riastores.html
