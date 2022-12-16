@@ -59,3 +59,16 @@ Currently supported options for this pipeline are:
 * For details about the preprocessing steps on the current branch, please see [`run.md`](run.md) (the Markdown sibling of the `run.py` script)
 
 ![Flowchart of preprocessing pipelines](flowcharts.png)
+
+## Contributing
+
+* To suggest improvements to the pipeline, please:
+  1. [Create an issue](https://github.com/SkeideLab/derivatives_template_code/issues/new)
+  2. Create a new branch from the most basic pipeline (i.e., with the lowest number) to which the issue applies
+  3. Create a pull request linked to your issue
+* If you make changes to `run.py`, make sure they are also reflected in the corresponding Markdown file by running `jupytext --to md run.py` (first install [Jupytext](https://jupytext.readthedocs.io) with `pip install jupytext`)
+* If you need to update the pipeline flowcharts:
+  1. Go to [https://app.diagrams.net](https://app.diagrams.net)
+  2. Select "File" → "Import from" → "Device..." → Choose the [`flowcharts.png`](flowcharts.png) file
+  3. Make your desired changes
+  4. Select "File" → "Export as" → "PNG ..." → Zoom: 300%, Border Width: 0, Size: Page, check "Include a copy of my diagram"
