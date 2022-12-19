@@ -115,7 +115,7 @@ job_ids = []
 for participant in participants:
     args = [script, deriv_dir, remote, participant,
             license_file, fd_thres, *output_spaces]
-    job_name = f's04_fmriprep_sub-{participant}'
+    job_name = f'fmriprep_sub-{participant}'
     this_job_id = submit_job(args, log_dir=log_dir, job_name=job_name)
     job_ids.append(this_job_id)
 
@@ -133,7 +133,7 @@ pipeline_dir = deriv_dir / 'fmriprep'
 pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
-                    log_dir=log_dir, job_name='s02_merge')
+                    log_dir=log_dir, job_name='merge')
 
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
