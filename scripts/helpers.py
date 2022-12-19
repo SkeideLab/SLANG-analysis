@@ -1,56 +1,46 @@
-from pathlib import Path
 from os import environ
+from pathlib import Path
 
 from simple_slurm import Slurm
 
 
-def add_container(ds, name, url, bids_path='.'):
-    """Stores a container (e.g., from Docker Hub) and in the dataset"""
-
-    container_list = ds.containers_list()
-    container_names = [c['name'] for c in container_list]
-    if name not in container_names:
-        call_fmt_list = [
-            'singularity run',
-            f'--bind {bids_path}:/data',
-            f'--bind {bids_path}/.work:/work',
-            '--bind $HOME/.cache/templateflow:/home/.cache/templateflow',
-            '--cleanenv --home /home --no-home {img} {cmd}']
-        call_fmt = ' '.join(call_fmt_list)
-        ds.containers_add(name, url, call_fmt=call_fmt, update=True)
-
-
 def get_templates(templates, bids_ds, deriv_name):
-    """Downlaods standard templates form templateflow into the dataset
+    """Downloads standard brain templates from TemplateFlow[1] to the dataset.
+
     Parameters
     ----------
-    templates : list
-        A list of template names (may include nonstandard templates).
+    templates : list of str
+        The names of the desired templates. See the TemplateFlow website[1]
+        for the templates that are available. May include additional
+        non-standard templates.
+    bids_ds : datalad.api.Dataset
+        The BIDS dataset to which the downloaded templates will be saved.
+    deriv_name : str
+        The name of the derivatives subdataset inside the BIDS dataset.
+
+    Notes
+    -----
+    [1] https://www.templateflow.org
     """
 
-    # Initialize templateflow directory
     templateflow_dir = Path(bids_ds.path) / deriv_name / 'templateflow'
     environ['TEMPLATEFLOW_HOME'] = str(templateflow_dir)
     import templateflow.api as tflow
 
-    # Make sure the default templates needed for fmriprep are always present
+    # These two templates will *always* be required by fMRIPrep
     fmriprep_templates = ['OASIS30ANTs', 'MNI152NLin2009cAsym']
-    all_templates = set(templates) | set(fmriprep_templates)
+    templates = set(templates) | set(fmriprep_templates)
 
-    # Check all *standard* templates, excluding nonstandard ones
+    # These templates are non-standard and don't need to be downloaded
     # See https://fmriprep.org/en/stable/spaces.html#nonstandard-spaces
     non_standard_templates = [
         'T1w', 'anat', 'fsnative', 'func', 'bold', 'run', 'boldref, sbref']
-    for template in all_templates:
-        if template not in non_standard_templates:
+    templates -= set(non_standard_templates)
 
-            # Get template name (excluding cohort, resolution, etc.)
-            template = template.split(':')[0]
+    for template in templates:
+        template = template.split(':')[0]  # Exclude additional modifiers
+        _ = tflow.get(template, raise_empty=True)
 
-            # Actually download the template(s)
-            _ = tflow.get(template, raise_empty=True)
-
-    # Save changes
     bids_ds.save(
         templateflow_dir, message='Initialize/update templateflow templates')
 
@@ -128,20 +118,16 @@ def submit_job(args_list, cpus=8, mem=32000, time='24:00:00', log_dir='logs/',
     [1] https://hpc.nih.gov/docs/job_dependencies.html
     """
 
-    # Join arguments to a single bash command
     cmd = ' '.join(str(arg) for arg in args_list)
 
-    # Create directory for output logs
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     error = f'{log_dir}/slurm-%j-{job_name}.out'
     output = f'{log_dir}/slurm-%j-{job_name}.out'
 
-    # Prepare job scheduler
     slurm = Slurm(cpus_per_task=cpus, error=error, mem=mem, nodes=1, ntasks=1,
                   output=output, time=time, job_name=job_name)
 
-    # Make the current job depend on previous jobs
     if dependency_jobs != []:
         if isinstance(dependency_jobs, int):
             dependency_jobs = [dependency_jobs]
@@ -149,7 +135,6 @@ def submit_job(args_list, cpus=8, mem=32000, time='24:00:00', log_dir='logs/',
         dependency = {dependency_type: dependency_str}
         slurm.set_dependency(dependency)
 
-    # Submit
     print('Submitting', cmd)
     job_id = slurm.sbatch(cmd)
 
