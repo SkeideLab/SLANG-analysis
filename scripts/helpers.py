@@ -55,6 +55,39 @@ def get_templates(templates, bids_ds, deriv_name):
         templateflow_dir, message='Initialize/update templateflow templates')
 
 
+def get_ria_remote(ds, ria_dir, sibling_name='output'):
+    """Creates a RIA store[1] dataset sibling if necessary and returns its URL.
+
+    Parameters
+    ----------
+    ds : datalad.api.Dataset
+        The main (BIDS/derivatives) dataset for which the RIA store sibling
+        will be created.
+    ria_dir : str or Path
+        The desired directory path for the RIA store.
+    sibling_name : str
+        The name under which the RIA store sibling will be configured in the
+        dataset.
+
+    Returns
+    -------
+    remote : str
+        The path/URL of the configered RIA store.
+
+    Notes
+    -----
+    [1] https://handbook.datalad.org/en/latest/beyond_basics/101-147-riastores.html
+    """
+
+    siblings = [sib['name'] for sib in ds.siblings()]
+    if not sibling_name in siblings:
+        ria_url = f'ria+file://{ria_dir}'
+        ds.create_sibling_ria(ria_url, name=sibling_name,
+                              alias='derivatives', new_store_ok=True)
+
+    return ds.siblings(name='output')[0]['url']
+
+
 def submit_job(args_list, cpus=8, mem=32000, time='24:00:00', log_dir='logs/',
                dependency_jobs=[], dependency_type='afterok', job_name='job'):
     """Submits a single batch job via SLURM, which can depend on other jobs.
