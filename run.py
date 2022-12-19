@@ -14,8 +14,7 @@ import json
 from pathlib import Path
 
 from datalad.api import Dataset
-
-from scripts.helpers import get_templates, submit_job
+from scripts.helpers import get_ria_remote, get_templates, submit_job
 
 # %% [markdown]
 # ## 2. Find DataLad datasets
@@ -80,12 +79,7 @@ get_templates(output_spaces, bids_ds, deriv_name)
 
 # %%
 ria_dir = bids_dir / '.outputstore'
-if not ria_dir.exists():
-    ria_url = f'ria+file://{ria_dir}'
-    deriv_ds.create_sibling_ria(
-        ria_url, name='output', alias='derivatives', new_store_ok=True)
-
-remote = deriv_ds.siblings(name='output')[0]['url']
+remote = get_ria_remote(deriv_ds, ria_dir)
 
 _ = deriv_ds.push(to='output')
 _ = deriv_ds.push(to='output-storage')
