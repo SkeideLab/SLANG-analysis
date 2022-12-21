@@ -7,7 +7,7 @@
 # as they are in BIDS format with subject- (and optionally session-)specific
 # sub-directories.
 #
-# ## 1. Load modules and helper functions
+# ## Load modules and helper functions
 
 # %%
 import json
@@ -17,7 +17,7 @@ from datalad.api import Dataset
 from scripts.helpers import get_ria_remote, get_templates, submit_job
 
 # %% [markdown]
-# ## 2. Find DataLad datasets
+# ## Find DataLad datasets
 #
 # We automatically detect the **BIDS derivatives dataset** (where preprocessing
 # outputs are to be stored) based on the location of the current file. We also
@@ -40,7 +40,7 @@ with open(code_dir / 'run_params.json', 'r') as fp:
     run_params = json.load(fp)
 
 # %% [markdown]
-# ## 3. Download containers
+# ## Download containers
 #
 # The software tools for preprocessing are provided as [Singularity
 # containers][2]. Since the batch jobs don't have access to the internet, we
@@ -55,7 +55,7 @@ containers_dict = {
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
-# ## 4. Download templates
+# ## Download templates
 #
 # Like the software containers, any standard brain templates that are needed
 # during preprocessing by fMRIPrep need to be pre-downloaded from
@@ -66,7 +66,7 @@ output_spaces = run_params['output_spaces']
 get_templates(output_spaces, bids_ds, deriv_name)
 
 # %% [markdown]
-# ## 5. Create or find output store
+# ## Create or find output store
 #
 # The [reproducible DataLad workflow][5] that we are using requires an
 # intermediate copy of the derivatives dataset, which is used for pushing the
@@ -86,7 +86,7 @@ _ = deriv_ds.push(to='output-storage')
 # _ = Repo(remote).git.gc() # Takes a couple of minutes, usually not necessary
 
 # %% [markdown]
-# ## 6. Extract participant labels
+# ## Extract participant labels
 #
 # Here we retrieve all the available participant labels based on the BIDS
 # directory structure. If you only want to process a subset of subjects, you
@@ -98,7 +98,7 @@ participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
 # participants = ['SA27', 'SO18']  # Custom selection for debugging
 
 # %% [markdown]
-# ## 7. Run fMRIPrep
+# ## Run fMRIPrep
 #
 # Here we actually run the preprocessing with fMRIPrep. Each subject
 # (with all its sessions) is processed in a separate batch job, submitted via
@@ -120,7 +120,7 @@ for participant in participants:
     job_ids.append(this_job_id)
 
 # %% [markdown]
-# ## 8. Merge job branches
+# ## Merge job branches
 #
 # After each preprocessing step, we merge the job-specific branches with the
 # preprocessed results from the output store back into the main derivatives

@@ -6,18 +6,17 @@ data. It will work for both cross-sectional and longitudinal data, as long
 as they are in BIDS format with subject- (and optionally session-)specific
 sub-directories.
 
-## 1. Load modules and helper functions
+## Load modules and helper functions
 
 ```python
 import json
 from pathlib import Path
 
 from datalad.api import Dataset
-
-from helpers import get_templates, submit_job
+from scripts.helpers import get_ria_remote, get_templates, submit_job
 ```
 
-## 2. Find DataLad datasets
+## Find DataLad datasets
 
 We automatically detect the **BIDS derivatives dataset** (where preprocessing
 outputs are to be stored) based on the location of the current file. We also
@@ -40,7 +39,7 @@ with open(code_dir / 'run_params.json', 'r') as fp:
     run_params = json.load(fp)
 ```
 
-## 3. Download containers
+## Download containers
 
 The software tools for preprocessing are provided as [Singularity
 containers][2]. Since the batch jobs don't have access to the internet, we
@@ -55,7 +54,7 @@ containers_dict = {
 _ = deriv_ds.get(containers_dict.values())
 ```
 
-## 4. Download templates
+## Download templates
 
 Like the software containers, any standard brain templates that are needed
 during preprocessing by fMRIPrep need to be pre-downloaded from
@@ -66,7 +65,7 @@ output_spaces = run_params['output_spaces']
 get_templates(output_spaces, bids_ds, deriv_name)
 ```
 
-## 5. Create or find output store
+## Create or find output store
 
 The [reproducible DataLad workflow][5] that we are using requires an
 intermediate copy of the derivatives dataset, which is used for pushing the
@@ -79,19 +78,14 @@ to date with the the main derivatives dataset by pushing to it.
 
 ```python
 ria_dir = bids_dir / '.outputstore'
-if not ria_dir.exists():
-    ria_url = f'ria+file://{ria_dir}'
-    deriv_ds.create_sibling_ria(
-        ria_url, name='output', alias='derivatives', new_store_ok=True)
-
-remote = deriv_ds.siblings(name='output')[0]['url']
+remote = get_ria_remote(deriv_ds, ria_dir)
 
 _ = deriv_ds.push(to='output')
 _ = deriv_ds.push(to='output-storage')
 # _ = Repo(remote).git.gc() # Takes a couple of minutes, usually not necessary
 ```
 
-## 6. Extract participant labels
+## Extract participant labels
 
 Here we retrieve all the available participant labels based on the BIDS
 directory structure. If you only want to process a subset of subjects, you
@@ -103,7 +97,7 @@ participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
 # participants = ['SA27', 'SO18']  # Custom selection for debugging
 ```
 
-## 7. Run fMRIPrep
+## Run fMRIPrep
 
 Here we actually run the preprocessing with fMRIPrep. Each subject
 (with all its sessions) is processed in a separate batch job, submitted via
@@ -113,19 +107,19 @@ out the shell script that is referenced below (it's in the same directiry as
 this script).
 
 ```python
-script = f'{deriv_dir}/code/s04_fmriprep.sh'
+script = code_dir / 'scripts/fmriprep.sh'
 license_file = run_params['license_file']
 fd_thres = run_params['fd_thres']
 job_ids = []
 for participant in participants:
     args = [script, deriv_dir, remote, participant,
             license_file, fd_thres, *output_spaces]
-    job_name = f's04_fmriprep_sub-{participant}'
+    job_name = f'fmriprep_sub-{participant}'
     this_job_id = submit_job(args, log_dir=log_dir, job_name=job_name)
     job_ids.append(this_job_id)
 ```
 
-## 8. Merge job branches
+## Merge job branches
 
 After each preprocessing step, we merge the job-specific branches with the
 preprocessed results from the output store back into the main derivatives
@@ -133,12 +127,12 @@ dataset. This is implemented via another batch job that depends on all
 participant-specific jobs from the last step having finished.
 
 ```python
-script = f'{deriv_dir}/code/s02_merge.sh'
+script = code_dir / 'scripts/merge.sh'
 pipeline_dir = deriv_dir / 'fmriprep'
 pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
-                    log_dir=log_dir, job_name='s02_merge')
+                    log_dir=log_dir, job_name='merge')
 ```
 
 [1]: https://fmriprep.org/en/stable/index.html
