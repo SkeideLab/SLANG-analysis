@@ -71,4 +71,4 @@ Currently supported options for this pipeline are:
   1. Go to [https://app.diagrams.net](https://app.diagrams.net)
   2. Select "File" → "Import from" → "Device..." → Choose the [`flowcharts.png`](flowcharts.png) file
   3. Make your desired changes
-  4. Select "File" → "Export as" → "PNG ..." → Zoom: 300%, Border Width: 0, Size: Page, check "Include a copy of my diagram"
+  4. Select "File" → "Export as" → "PNG ..." → Zoom: 300%, Border Width: 0, Size: Diagram, check "Include a copy of my diagram"
