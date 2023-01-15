@@ -55,6 +55,18 @@ containers_dict = {
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
+# ## Add custom LISA container
+
+# %%
+deriv_ds.containers_add(
+    name='lisa',
+    url='docker://skeidelab/bids-app-lisa:latest',
+    call_fmt='{img_dspath}/code/containers/scripts/singularity_cmd run {img} {cmd}',
+    # update=True, # Uncomment if you want to update the container
+    on_failure='ignore')
+bids_ds.save('derivatives/code/containers', message='Add/update containers')
+
+# %% [markdown]
 # ## Download templates
 #
 # Like the software containers, any standard brain templates that are needed
@@ -93,9 +105,12 @@ _ = deriv_ds.push(to='output-storage')
 # can overwrite the `participants` variable with a cusomt list of subjects.
 
 # %%
-participant_dirs = list(bids_dir.glob('sub-*/'))
-participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
-# participants = ['SA27', 'SO18']  # Custom selection for debugging
+participant_session_dirs = sorted(list(bids_dir.glob('sub-*/ses-*/')))
+participants_sessions = [(d.parent.name.replace('sub-', ''),
+                          d.name.replace('ses-', ''))
+                         for d in participant_session_dirs]
+# participants_sessions = [('SA31', '01')]  # Custom selection for debugging
+participants = [p_s[0] for p_s in participants_sessions]
 
 # %% [markdown]
 # ## Run fMRIPrep
@@ -136,9 +151,56 @@ job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='merge')
 
 # %% [markdown]
+# ## Run first level GLM with LISA
+#
+# To do: Describe [LISA][7]
+
+# %%
+script = code_dir / 'scripts/lisa.sh'
+
+# To do: Pass via `run_params.json`
+task = 'language'
+space = 'T1w'
+del_initial_volumes = 3
+contrasts = ['+audios_noise+audios_pseudo+audios_words',
+             '+images_noise+images_pseudo+images_words',
+             '+audios_words-audios_pseudo',
+             '+audios_pseudo-audios_noise',
+             '+images_words-images_pseudo',
+             '+images_pseudo-images_noise']
+contrast_labels = ['audios-minus-null',
+                   'images-minus-null',
+                   'audios-words-minus-pseudo',
+                   'audios-pseudo-minus-noise',
+                   'images-words-minus-pseudo',
+                   'images-pseudo-minus-noise']
+contrasts_and_labels = contrasts + contrast_labels
+
+job_ids = []
+for participant, session in participants_sessions:
+    args = [script, deriv_dir, remote, participant, session, task, space,
+            del_initial_volumes, *contrasts_and_labels]
+    job_name = f'lisa_sub-{participant}_ses-{session}'
+    this_job_id = submit_job(
+        args, log_dir=log_dir, dependency_jobs=job_id, job_name=job_name)
+    job_ids.append(this_job_id)
+
+# %% [markdown]
+# ## Merge job branches
+
+# %%
+script = code_dir / 'scripts/merge.sh'
+pipeline_dir = deriv_dir / 'lisa'
+pipeline_description = 'LISA'
+args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
+job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
+                    log_dir=log_dir, job_name='merge')
+
+# %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
 # [2]: http://handbook.datalad.org/en/latest/basics/101-133-containersrun.html
 # [3]: https://github.com/ReproNim/containers
 # [4]: https://www.templateflow.org
 # [5]: https://doi.org/10.1038/s41597-022-01163-2
 # [6]: https://handbook.datalad.org/en/latest/beyond_basics/101-147-riastores.html
+# [7]: https://doi.org/10.1038/s41467-018-06304-z
