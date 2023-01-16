@@ -64,7 +64,8 @@ deriv_ds.containers_add(
     call_fmt='{img_dspath}/code/containers/scripts/singularity_cmd run {img} {cmd}',
     # update=True, # Uncomment if you want to update the container
     on_failure='ignore')
-bids_ds.save('derivatives/code/containers', message='Add/update containers')
+bids_ds.save('derivatives/.datalad/environments',
+             message='Add/update containers')
 
 # %% [markdown]
 # ## Download templates
