@@ -10,8 +10,9 @@ participant=$3
 session=$4
 task=$5
 space=$6
-del_initial_volumes=$7
-shift 7
+smooth_fwhm=$7
+fd_threshold=$8
+shift 8
 contrasts_and_labels=("$@")
 
 # Load Singularity for running containerized commands
@@ -62,7 +63,8 @@ $job_dir $lisa_dir participant \
 --session_label $session \
 --task_label $task \
 --space_label $space \
---del_initial_volumes $del_initial_volumes \
+--smooth_fwhm $smooth_fwhm \
+--fd_threshold $fd_threshold \
 --contrasts ${contrasts[*]} \
 --contrast_labels ${labels[*]} \
 --perm 5000"

@@ -162,15 +162,19 @@ script = code_dir / 'scripts/lisa.sh'
 # To do: Pass via `run_params.json`
 task = 'language'
 space = 'T1w'
-del_initial_volumes = 3
-contrasts = ['+audios_noise+audios_pseudo+audios_words',
-             '+images_noise+images_pseudo+images_words',
-             '+audios_words-audios_pseudo',
-             '+audios_pseudo-audios_noise',
-             '+images_words-images_pseudo',
-             '+images_pseudo-images_noise']
+smooth_fwhm = 4.8
+fd_thres = run_params['fd_thres']
+contrasts = [
+    '+audios_noise+audios_pseudo+audios_words',
+    '+images_noise+images_pseudo+images_words',
+    '+audios_noise+audios_pseudo+audios_words-images_noise-images_pseudo-images_words',
+    '+images_noise+images_pseudo+images_words-audios_noise-audios_pseudo-audios_words',
+    '+audios_words-audios_pseudo', '+audios_pseudo-audios_noise',
+    '+images_words-images_pseudo', '+images_pseudo-images_noise']
 contrast_labels = ['audios-minus-null',
                    'images-minus-null',
+                   'audios-minus-images',
+                   'images-minus-audios',
                    'audios-words-minus-pseudo',
                    'audios-pseudo-minus-noise',
                    'images-words-minus-pseudo',
@@ -180,10 +184,10 @@ contrasts_and_labels = contrasts + contrast_labels
 job_ids = []
 for participant, session in participants_sessions:
     args = [script, deriv_dir, remote, participant, session, task, space,
-            del_initial_volumes, *contrasts_and_labels]
+            smooth_fwhm, fd_thres, *contrasts_and_labels]
     job_name = f'lisa_sub-{participant}_ses-{session}'
-    this_job_id = submit_job(
-        args, log_dir=log_dir, dependency_jobs=job_id, job_name=job_name)
+    this_job_id = submit_job(args, cpus=40, mem=185000, log_dir=log_dir,
+                             dependency_jobs=job_id, job_name=job_name)
     job_ids.append(this_job_id)
 
 # %% [markdown]
@@ -194,8 +198,9 @@ script = code_dir / 'scripts/merge.sh'
 pipeline_dir = deriv_dir / 'lisa'
 pipeline_description = 'LISA'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
-job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
-                    log_dir=log_dir, job_name='merge')
+job_id = submit_job(args, cpus=40, mem=185000, dependency_jobs=job_ids, 
+                    dependency_type='afterany', log_dir=log_dir,
+                    job_name='merge')
 
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
