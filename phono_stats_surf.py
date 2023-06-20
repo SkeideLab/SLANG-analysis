@@ -1,49 +1,32 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from bids import BIDSLayout, BIDSLayoutIndexer
+from datalad.api import Dataset
+from mne.datasets import fetch_fsaverage
 from nilearn.glm.contrasts import (_compute_fixed_effects_params,
                                    compute_contrast)
 from nilearn.glm.first_level import make_first_level_design_matrix, run_glm
 from nilearn.interfaces.fmriprep import load_confounds
+from nilearn.plotting.cm import cold_hot
 from nilearn.surface import load_surf_data
 from surfplot import Plot
-import matplotlib.pyplot as plt
-
-task = 'language'
-space = 'fsnative'
-fd_threshold = 2.4
-hrf_model = 'spm'
-contrast_defs = {'a-pseudo-minus-noise': (['audios_pseudo'], ['audios_noise']),
-                 'v-pseudo-minus-noise': (['images_pseudo'], ['images_noise'])}
-froi_contrast_label = 'a-pseudo-minus-noise'
-psc_contrast_label = 'v-pseudo-minus-noise'
-rois = [30, 34]
-t_thresh = 2.0
-
-derivatives_dir = Path(__file__).parent.parent
-bids_dir = derivatives_dir.parent
-fmriprep_dir = derivatives_dir / 'fmriprep'
-freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
-output_dir = derivatives_dir / 'nilearn'
-
-indexer = BIDSLayoutIndexer(force_index=str(freesurfer_dir))
-layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir, indexer=indexer)
 
 
-def compute_session_contrasts(layout, subject, task, space, hemi,
-                              fd_threshold, hrf_model, contrast_defs):
+def compute_session_contrasts(layout, subject, task, space, fd_threshold,
+                              hrf_model, contrast_defs):
     """Compute a dictionary and data frame of contrasts for each session."""
-    
+
     contrast_dict = {label: {} for label in contrast_defs.keys()}
-    contrast_dfs = []
 
-    for session in ['01', '02', '03', '04']: # sorted(layout.get_sessions(subject=subject)):
+    sessions = sorted(layout.get_sessions(subject=subject, desc='preproc'))
+    for session in sessions:
 
-        design_matrix, labels, estimates = compute_glm(
-            layout, subject, session, task, space, hemi, fd_threshold,
-            hrf_model)
+        design_matrix, labels, estimates = compute_glm(layout, subject,
+                                                       session, task, space,
+                                                       fd_threshold, hrf_model)
 
         for label, condition_tuple in contrast_defs.items():
 
@@ -53,29 +36,23 @@ def compute_session_contrasts(layout, subject, task, space, hemi,
                                             conditions_plus, conditions_minus)
             contrast_dict[label][session] = contrast
 
-            contrast_df = contrast_to_df(contrast, label, subject, session)
-            contrast_dfs.append(contrast_df)
-
-    contrast_df = pd.concat(contrast_dfs)
-
-    return contrast_dict, contrast_df
+    return contrast_dict
 
 
-def compute_glm(layout, subject, session, task, space, hemi, fd_threshold,
-                hrf_model):
+def compute_glm(
+        layout, subject, session, task, space, fd_threshold, hrf_model):
     """Fits the first-level GLM on surface data for a single session."""
 
     event_cols = ['onset', 'duration', 'trial_type']
-    events = layout.get_collections(
-        'run', 'events', subject=subject, session=session)[0]
+    events = layout.get_collections('run', 'events', subject=subject,
+                                    session=session)[0]
     events = events.to_df()[event_cols]
 
-    surf_files = layout.get(
-        'filename', scope='derivatives', subject=subject,
-        session=session, task=task, space=space, hemi=hemi,
-        extension='.func.gii')
+    surf_files = layout.get('filename', scope='derivatives', subject=subject,
+                            session=session, task=task, space=space,
+                            suffix='bold', extension='.func.gii')
 
-    texture = np.concatenate([load_surf_data(f).T for f in surf_files])
+    texture = np.concatenate([load_surf_data(f) for f in surf_files]).T
 
     n_scans = texture.shape[0]
     start_time = layout.get_metadata(surf_files[0])['StartTime']
@@ -85,19 +62,17 @@ def compute_glm(layout, subject, session, task, space, hemi, fd_threshold,
     # Necessary to get confounds via *volumetric* fMRIPrep outputs
     # Due to https://github.com/nilearn/nilearn/issues/3479 and
     # https://github.com/nilearn/nilearn/blob/b1fa2e/nilearn/interfaces/fmriprep/load_confounds_utils.py#L19
-    vol_file = layout.get(
-        'filename', scope='derivatives', subject=subject, session=session,
-        task=task, space='T1w', desc='preproc', extension='.nii.gz')[0]
+    vol_file = layout.get('filename', scope='derivatives', subject=subject,
+                          session=session, task=task, space='T1w',
+                          desc='preproc', extension='.nii.gz')[0]
     confounds, sample_mask = load_confounds(
-        vol_file,
-        strategy=('motion', 'high_pass', 'wm_csf', 'scrub', 'compcor'),
-        motion='basic', wm_csf='basic',
-        scrub=0, fd_threshold=fd_threshold, std_dvars_threshold=None,
-        compcor='anat_combined', n_compcor=6)
+        vol_file, strategy=('motion', 'high_pass', 'wm_csf', 'scrub', 'compcor'),
+        motion='basic', wm_csf='basic', scrub=0, fd_threshold=fd_threshold,
+        std_dvars_threshold=None, compcor='anat_combined', n_compcor=6)
 
-    design_matrix = make_first_level_design_matrix(
-        frame_times, events, hrf_model, drift_model=None,
-        add_regs=confounds)
+    design_matrix = make_first_level_design_matrix(frame_times, events,
+                                                   hrf_model, drift_model=None,
+                                                   add_regs=confounds)
 
     texture = texture[sample_mask]
     design_matrix = design_matrix.iloc[sample_mask]
@@ -110,8 +85,7 @@ def compute_glm(layout, subject, session, task, space, hemi, fd_threshold,
     mean_texture = texture.mean(axis=0)
     texture = 100.0 * (texture / mean_texture - 1.0)
 
-    labels, estimates = \
-        run_glm(texture, design_matrix.values)
+    labels, estimates = run_glm(texture, design_matrix.values)
 
     return design_matrix, labels, estimates
 
@@ -128,10 +102,7 @@ def compute_psc_contrast(labels, estimates, design_matrix,
         if column in conditions_minus:
             contrast_values[col_ix] = -1.0 / len(conditions_minus)
 
-    contrast = compute_contrast(
-        labels, estimates, contrast_values, contrast_type='t')
-    
-    return contrast
+    return compute_contrast(labels, estimates, contrast_values)
 
 
 def contrast_to_df(contrast, label, subject, session):
@@ -158,142 +129,186 @@ def compute_fixed_effects(contrasts):
 
     psc_maps, var_maps, t_maps = _compute_fixed_effects_params(
         effects, variances, precision_weighted=False)
-    
+
     return psc_maps[0], var_maps[0], t_maps[0]
 
 
+def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
+                 target_subject, sval_filename, tval_filename=None):
+    """Uses FreeSurfer to convert fsaverage surface annotations to fsnative."""
+
+    freesurfer_dir = Path(freesurfer_dir)
+
+    if Path(sval_filename).suffix == '.annot':
+        sval_flag = ['--sval-annot', sval_filename]
+    else:
+        sval_flag = ['--sval', sval_filename]
+
+    if tval_filename is None:
+        tval_filename = sval_filename
+
+    output_files = []
+    for hemi in ['lh', 'rh']:
+
+        input_file = freesurfer_dir / \
+            f'{source_subject}/label/{hemi}.{sval_filename}'
+        output_file = freesurfer_dir / \
+            f'{target_subject}/label/{hemi}.{sval_filename}'
+
+        if not output_file.exists():
+
+            cmd = ['mri_surf2surf',
+                   '--srcsubject', source_subject,
+                   '--trgsubject', target_subject,
+                   '--hemi', hemi,
+                   *sval_flag,
+                   '--tval', sval_filename,
+                   '--sd', freesurfer_dir]
+            cmd = ' '.join([str(elem) for elem in cmd])
+            cmd = f'-c \'{cmd}\''  # See https://stackoverflow.com/a/62313159
+
+            # # To use Docker instead of Singularity
+            # from os import environ
+            # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
+
+            derivatives_dataset.containers_run(
+                cmd, container_name='code/containers/neurodesk-freesurfer',
+                inputs=[str(input_file)], outputs=[str(output_file)],
+                message=f'Convert surface annotations from {source_subject} to {subject}',
+                explicit=True)
+
+        else:
+            print(f'Output surface file "{output_file}" exists, nothing to do')
+
+        output_files.append(output_file)
+
+    return output_files
+
+
+def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
+    """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
+
+    derivatives_dataset = Dataset(derivatives_dir)
+    atlas_files = surf_to_surf(derivatives_dataset, freesurfer_dir,
+                               source_subject='fsaverage',
+                               target_subject=f'sub-{subject}',
+                               sval_filename='HCPMMP1.annot')
+
+    atlas_map = np.concatenate([load_surf_data(f) for f in atlas_files])
+
+    if isinstance(roi_ixs, (int, float, str)):
+        roi_ixs = [int(roi_ixs)]
+    else:
+        roi_ixs = [int(ix) for ix in roi_ixs]
+
+    return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
+
+
+def make_surfplot(
+        layout, subject, stat_map=None, roi_map_1=None, roi_map_2=None,
+        add_curv=True, views='lateral', size=(1000, 300),
+        zoom=2.0, cmap=cold_hot, cbar_label=None, vmin=-2.0, vmax=2.0):
+    """Plots a statistical and/or ROI map(s) on the inflated FreeSurfer surface."""
+
+    inflated_files = sorted(
+        layout.get(
+            'filename', subject=subject, suffix='inflated',
+            extension='surf.gii'))
+    plot = Plot(*inflated_files, views=views, size=size, zoom=zoom)
+
+    if add_curv:
+        curv_files = sorted(layout.get('filename', subject=subject,
+                                       extension='curv'))
+        curv_map = np.concatenate([load_surf_data(f) for f in curv_files])
+        curv_map_sign = np.sign(curv_map)
+        _ = plot.add_layer(curv_map_sign, cmap='Greys',
+                           color_range=[-8.0, 4.0], cbar=False)
+
+    from matplotlib.colors import LinearSegmentedColormap
+    cmap_file = '/Users/alexander/Downloads/ScientificColourMaps8/managua/managua.txt'
+    cmap_data = np.loadtxt(cmap_file)
+    cmap = LinearSegmentedColormap.from_list(
+        'managua_r', np.flip(cmap_data, axis=0))
+
+    if stat_map is not None:
+        _ = plot.add_layer(stat_map, cmap=cmap, color_range=[vmin, vmax],
+                           cbar=True, cbar_label=cbar_label)
+
+    if roi_map_1 is not None:
+        _ = plot.add_layer(roi_map_1, cmap='Greys_r',
+                           as_outline=True, cbar=False)
+
+    if roi_map_2 is not None:
+        _ = plot.add_layer(roi_map_2, cmap='brg', as_outline=True, cbar=False)
+
+    return plot.build()
+
+
+task = 'language'
+space = 'fsnative'
+fd_threshold = 2.4
+hrf_model = 'spm'
+contrast_defs = {'a-pseudo-minus-noise': (['audios_pseudo'], ['audios_noise']),
+                 'v-pseudo-minus-noise': (['images_pseudo'], ['images_noise'])}
+froi_contrast_label = 'a-pseudo-minus-noise'
+psc_contrast_label = 'v-pseudo-minus-noise'
+roi_ixs = 129
+n_top_vertices = 500
+
+derivatives_dir = Path(__file__).parent.parent
+bids_dir = derivatives_dir.parent
+fmriprep_dir = derivatives_dir / 'fmriprep'
+freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
+output_dir = derivatives_dir / 'nilearn'
+
+indexer = BIDSLayoutIndexer(force_index=str(freesurfer_dir))
+layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir], indexer=indexer)
+
+fsaverage_dir = Path(fetch_fsaverage(freesurfer_dir))
+annot_file = fsaverage_dir / 'label/lh.HCPMMP1_combined.annot'
 
 psc_dfs = []
-for subject in ['SA27']: # get_subjects():
+for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
-    for hemi in ['L']: # ['L', 'R']:
+    print(f'\nPrecessing subject sub-{subject}\n')
 
-        inflated_file = layout.get('filename', subject=subject, hemi=hemi,
-                                   suffix='inflated', extension='.surf.gii')[0]
+    contrast_dict = compute_session_contrasts(layout, subject, task, space,
+                                              fd_threshold, hrf_model,
+                                              contrast_defs)
 
-        hemi_fs = f'{hemi.lower()}h'
-        curv_file = layout.get('filename', subject=subject, suffix=hemi_fs,
-                               extension='.curv')[0]
-        curv_map = load_surf_data(curv_file)
-        curv_map_sign = np.sign(curv_map)
+    psc_map, var_map, t_map = compute_fixed_effects(
+        contrast_dict[froi_contrast_label].values())
 
-        annot_file = layout.get('filename', subject=subject, suffix=hemi_fs,
-                                extension='.aparc.annot')[0]
-        annot_data = load_surf_data(annot_file)
-        roi_maps = [np.where(annot_data == roi, 1.0, 0.0) for roi in rois]
-        roi_map = np.sum(roi_maps, axis=0)
+    roi_map = make_glasser_roi_map(
+        derivatives_dir, freesurfer_dir, subject, roi_ixs)
 
-        contrast_dict, contrast_df = compute_session_contrasts(
-            layout, subject, task, space, hemi, fd_threshold, hrf_model,
-            contrast_defs)
+    t_map_roi = t_map * roi_map
+    top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
+    froi_map = np.zeros_like(t_map_roi, dtype='int')
+    froi_map[top_ixs] = 1
 
-        psc_map, var_map, t_map = \
-            compute_fixed_effects(contrast_dict[froi_contrast_label].values())
+    _ = make_surfplot(layout, subject, t_map, roi_map, froi_map,
+                      cbar_label='Spoken pseudowords\nminus noise ($t$)',
+                      vmin=-11.0, vmax=11.0)
 
-        psc_map_pos = np.where(t_map > t_thresh, psc_map, 0.0)
-        psc_map_neg = np.where(t_map < -t_thresh, psc_map, 0.0)
-        psc_map_thresh = np.where(np.abs(t_map) > t_thresh, psc_map, 0.0)
+    output_sub_dir = output_dir / f'nilearn/sub-{subject}'
+    output_sub_dir.mkdir(exist_ok=True, parents=True)
+    plot_filename = f'sub-{subject}_task-{task}_space-{space}_desc-{froi_contrast_label}_plot.png'
+    plot_file = output_sub_dir / plot_filename
+    plt.savefig(plot_file, dpi=200, bbox_inches='tight')
 
-        plot = Plot(inflated_file, views = 'lateral', size=(2000, 1400), zoom=1.7)
-        _ = plot.add_layer(curv_map_sign, cmap='Greys',
-                            color_range=[-8.0, 4.0], cbar=False)
-        _ = plot.add_layer(psc_map_pos, cmap='YlOrRd_r',
-                           color_range=[0.0, 1.0], cbar=False)
-        _ = plot.add_layer(psc_map_neg, cmap='YlGnBu',
-                           color_range=[-1.0, 0.0], cbar=False)
-        _ = plot.add_layer(roi_map, cmap='brg', as_outline=True, cbar=False)
-        fig = plot.build()
+    psc_contrasts = contrast_dict[psc_contrast_label]
+    for session, contrast in psc_contrasts.items():
+        froi_psc = contrast.effect[0][froi_map].mean()
+        psc_df = pd.DataFrame({'subject': subject,
+                               'session': session,
+                               'froi_psc': froi_psc},
+                              index=[0])
+        psc_dfs.append(psc_df)
 
-        _ = plt.tight_layout()
-        plot_dir = output_dir / 'plots'
-        plot_dir.mkdir(parents=True, exist_ok=True)
-        plot_file = plot_dir / \
-            f'sub-{subject}_task-{task}_space-{space}_hemi-{hemi}_desc-{froi_contrast_label}_plot.png'
-        _ = plt.savefig(plot_file)
-
-        froi_mask = roi_map * np.where(t_map > t_thresh, 1.0, 0.0)
-        froi_mask = froi_mask.astype('bool')
-        
-        psc_contrasts = contrast_dict[psc_contrast_label]
-        for session, contrast in psc_contrasts.items():
-            froi_psc = contrast.effect[0][froi_mask].mean()
-            psc_df = pd.DataFrame({'subject': subject,
-                                   'session': session,
-                                   'hemi': hemi,
-                                   'froi_psc': froi_psc},
-                                   index=[0])
-            psc_dfs.append(psc_df)
-
+output_group_dir = output_dir / 'nilearn/sub-group'
+output_group_dir.mkdir(exist_ok=True, parents=True)
 psc_df = pd.concat(psc_dfs)
-psc_df_file = output_dir / \
-    f'task-{task}_space-{space}_hemi-{hemi}_desc-{froi_contrast_label}_psc.csv'
+psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-{froi_contrast_label}_psc.csv'
+psc_df_file = output_group_dir / psc_df_filename
 psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
-
-
-
-
-
-
-        # t_map_thresh = np.where(np.abs(t_map) > t_thresh, t_map, 0.0)
-
-        # roi_mask = np.isin(annot_data, list(rois))
-        # t_map_masked = t_map_pos * roi_mask
-        # peak_map = np.where(t_map_masked == t_map_masked.max(), 1.0, 0.0)
-
-        # psc_map = fixed_fx_effect[0]
-        # psc_map_thresh = np.where(np.abs(t_map) > t_thresh, psc_map, 0.0)
-        # psc_map_pos = np.where(t_map > t_thresh, psc_map, 0.0)
-        # psc_map_neg = np.where(t_map < -t_thresh, psc_map, 0.0)
-
-        # from nilearn.plotting import plot_surf_stat_map
-        # import matplotlib.pyplot as plt
-        # inflated_file = '/Users/alexander/Research/slang/data/derivatives/fmriprep/sourcedata/freesurfer/sub-SA27/surf/lh.inflated'
-        # curv_file = '/Users/alexander/Research/slang/data/derivatives/fmriprep/sourcedata/freesurfer/sub-SA27/surf/lh.curv'
-        # curv_data = load_surf_data(curv_file)
-        # curv_data_sign = np.sign(curv_data) / 6 + 0.8
-        # _ = plot_surf_stat_map(inflated_file, t_map, bg_map=curv_data_sign, threshold=3.0, vmax=12.0)
-        # plt.savefig('nilearn.png', dpi=600)
-
-        # from nilearn.plotting import plot_surf
-        # inflated_file = '/Users/alexander/Research/slang/data/derivatives/freesurfer/sub-SA27/surf/lh.inflated'
-        # curv_file = '/Users/alexander/Research/slang/data/derivatives/freesurfer/sub-SA27/surf/lh.curv'
-        # curv_map = load_surf_data(curv_file)
-        # curv_map_sign = (np.sign(curv_map) + 1.0) / 20.0 + 0.5
-        # sulc_file = '/Users/alexander/Research/slang/data/derivatives/freesurfer/sub-SA27/surf/lh.sulc'
-        # sulc_map = load_surf_data(sulc_file)
-        # sulc_map_norm = sulc_map / sulc_map.max()
-        # bg_map = curv_map_sign + sulc_map_norm / 6.0
-        # zero_map = np.zeros_like(bg_map)
-        # _ = plot_surf(inflated_file, zero_map, bg_map, darkness=1.0)
-        # plt.savefig('nilearn_anat.png', dpi=1200)
-
-        # set_3d_backend('notebook')
-        # subject_fs = f'sub-{subject}'
-        # hemi_fs = f'{hemi.lower()}h'
-        # brain = Brain(subject=subject_fs,
-        #             hemi=hemi_fs,
-        #             surf='inflated',
-        #             cortex=[(0.5, 0.5, 0.5), (0.3, 0.3, 0.3)],
-        #             size=(3000, 2500),
-        #             background='white',
-        #             subjects_dir=freesurfer_dir,
-        #             offscreen=True)
-        # brain.add_data(t_map, fmin=3.0, fmid=3.0000001, fmax=12.0, transparent=True)
-        # brain.save_image('test.png')
-        # brain.close()
-
-        # from surfplot import Plot
-        # hemi_lh = '/Users/alexander/Research/slang/data/derivatives/fmriprep/sub-SA27/anat/sub-SA27_run-1_hemi-L_inflated.surf.gii'
-        # curv_file = '/Users/alexander/Research/slang/data/derivatives/fmriprep/sourcedata/freesurfer/sub-SA27/surf/lh.curv'
-        # # hemi_lh = '/Users/alexander/Research/slang/data/derivatives/templateflow/tpl-subSA27/tpl-subSA27_hemi-L_den-164k_inflated.surf.gii'
-        # # curv_file = '/Users/alexander/Research/slang/data/derivatives/freesurfer/sub-SA27/surf/lh.curv'
-        # curv_map = load_surf_data(curv_file)
-        # curv_map_sign = np.sign(curv_map)
-        # plot = Plot(hemi_lh, views = 'lateral', size=(2000, 1500))
-        # _ = plot.add_layer(curv_map_sign, cmap='Greys',
-        #                     color_range=[-4.0, 4.0], cbar=False)
-        # # _ = plot.add_layer(psc_map, cmap='cold_hot', color_range=[-2.0, 2.0], alpha=0.6)
-        # _ = plot.add_layer(psc_map_pos, cmap='YlOrRd_r', color_range=[0.0, 2.0])
-        # _ = plot.add_layer(psc_map_neg, cmap='YlGnBu', color_range=[-2.0, 0.0])
-        # fig = plot.build()
-        # plt.savefig('surfplot.png', dpi=300)
