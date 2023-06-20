@@ -19,7 +19,8 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
                               hrf_model, contrast_defs):
     """Compute a dictionary and data frame of contrasts for each session."""
 
-    contrast_dict = {label: {} for label in contrast_defs.keys()}
+    aud_contrasts = {}
+    vis_contrasts = {}
 
     sessions = sorted(layout.get_sessions(subject=subject, desc='preproc'))
     for session in sessions:
@@ -28,15 +29,17 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
                                                        session, task, space,
                                                        fd_threshold, hrf_model)
 
-        for label, condition_tuple in contrast_defs.items():
+        aud_contrasts[session] = \
+            compute_psc_contrast(labels, estimates, design_matrix,
+                                 conditions_plus=['audios_pseudo'],
+                                 conditions_minus=['audios_noise'])
 
-            conditions_plus = condition_tuple[0]
-            conditions_minus = condition_tuple[1]
-            contrast = compute_psc_contrast(labels, estimates, design_matrix,
-                                            conditions_plus, conditions_minus)
-            contrast_dict[label][session] = contrast
+        vis_contrasts[session] = \
+            compute_psc_contrast(labels, estimates, design_matrix,
+                                 conditions_plus=['images_pseudo'],
+                                 conditions_minus=['images_noise'])
 
-    return contrast_dict
+    return aud_contrasts, vis_contrasts
 
 
 def compute_glm(
@@ -272,12 +275,11 @@ for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
     print(f'\nPrecessing subject sub-{subject}\n')
 
-    contrast_dict = compute_session_contrasts(layout, subject, task, space,
-                                              fd_threshold, hrf_model,
-                                              contrast_defs)
+    aud_contrasts, vis_contrasts = \
+        compute_session_contrasts(layout, subject, task, space, fd_threshold,
+                                  hrf_model, contrast_defs)
 
-    psc_map, var_map, t_map = compute_fixed_effects(
-        contrast_dict[froi_contrast_label].values())
+    psc_map, var_map, t_map = compute_fixed_effects(aud_contrasts.values())
 
     roi_map = make_glasser_roi_map(
         derivatives_dir, freesurfer_dir, subject, roi_ixs)
@@ -297,8 +299,7 @@ for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
     plot_file = output_sub_dir / plot_filename
     plt.savefig(plot_file, dpi=200, bbox_inches='tight')
 
-    psc_contrasts = contrast_dict[psc_contrast_label]
-    for session, contrast in psc_contrasts.items():
+    for session, contrast in vis_contrasts.items():
         froi_psc = contrast.effect[0][froi_map].mean()
         psc_df = pd.DataFrame({'subject': subject,
                                'session': session,
