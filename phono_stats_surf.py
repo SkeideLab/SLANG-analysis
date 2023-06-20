@@ -1,3 +1,4 @@
+from itertools import combinations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -27,7 +28,8 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
 
         design_matrix, labels, estimates = compute_glm(layout, subject,
                                                        session, task, space,
-                                                       fd_threshold, hrf_model)
+                                                       fd_threshold, hrf_model,
+                                                       use_single_trials=False)
 
         aud_contrasts[session] = \
             compute_psc_contrast(labels, estimates, design_matrix,
@@ -42,14 +44,23 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
     return aud_contrasts, vis_contrasts
 
 
-def compute_glm(
-        layout, subject, session, task, space, fd_threshold, hrf_model):
+def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
+                use_single_trials=False):
     """Fits the first-level GLM on surface data for a single session."""
 
     event_cols = ['onset', 'duration', 'trial_type']
     events = layout.get_collections('run', 'events', subject=subject,
                                     session=session)[0]
     events = events.to_df()[event_cols]
+
+    if use_single_trials:  # See https://nilearn.github.io/dev/auto_examples/07_advanced/plot_beta_series.html
+        conditions = events['trial_type'].unique()
+        condition_counter = {c: 0 for c in conditions}
+        for trial_ix, trial in events.iterrows():
+            condition = trial['trial_type']
+            condition_counter[condition] += 1
+            trial_name = f'{condition}_{condition_counter[condition]:02d}'
+            events.loc[trial_ix, 'trial_type'] = trial_name
 
     surf_files = layout.get('filename', scope='derivatives', subject=subject,
                             session=session, task=task, space=space,
