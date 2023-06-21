@@ -205,10 +205,10 @@ def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
     return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
 
 
-def make_surfplot(
-        layout, subject, stat_map=None, roi_map_1=None, roi_map_2=None,
-        add_curv=True, views='lateral', size=(1000, 300),
-        zoom=2.0, cmap=cold_hot, cbar_label=None, vmin=-2.0, vmax=2.0):
+def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
+                  roi_map_2=None, add_curv=True, views='lateral',
+                  size=(1000, 300), zoom=2.0, cmap=cold_hot, cbar_label=None,
+                  vmin=-2.0, vmax=2.0):
     """Plots a statistical and/or ROI map(s) on the inflated FreeSurfer surface."""
 
     inflated_files = sorted(
