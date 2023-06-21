@@ -16,6 +16,83 @@ from nilearn.surface import load_surf_data
 from surfplot import Plot
 
 
+def main():
+    """The main function to run the univariate + multiavariate analyses."""
+
+    task = 'language'
+    space = 'fsnative'
+    fd_threshold = 2.4
+    hrf_model = 'spm'
+    roi_ixs = 129
+    n_top_vertices = 500
+
+    derivatives_dir = Path(__file__).parent.parent
+    bids_dir = derivatives_dir.parent
+    fmriprep_dir = derivatives_dir / 'fmriprep'
+    freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
+    output_dir = derivatives_dir / 'nilearn'
+
+    indexer = BIDSLayoutIndexer(force_index=str(freesurfer_dir))
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir], indexer=indexer)
+
+    fsaverage_dir = fetch_fsaverage(freesurfer_dir)
+
+    psc_dfs = []
+    corr_dfs = []
+    for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
+
+        print(f'\nPrecessing subject sub-{subject}\n')
+
+        aud_contrasts, vis_contrasts = \
+            compute_session_contrasts(layout, subject, task, space,
+                                      fd_threshold, hrf_model)
+
+        psc_map, var_map, t_map = compute_fixed_effects(aud_contrasts.values())
+
+        roi_map = make_glasser_roi_map(derivatives_dir, freesurfer_dir,
+                                       subject, roi_ixs)
+
+        t_map_roi = t_map * roi_map
+        top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
+        froi_map = np.zeros_like(t_map_roi, dtype='int')
+        froi_map[top_ixs] = 1
+
+        _ = make_surfplot(layout, subject, t_map, roi_map, froi_map,
+                          cbar_label='Spoken pseudowords\nminus noise ($t$)',
+                          vmin=-11.0, vmax=11.0)
+
+        output_sub_dir = output_dir / f'nilearn/sub-{subject}'
+        output_sub_dir.mkdir(exist_ok=True, parents=True)
+        plot_filename = f'sub-{subject}_task-{task}_space-{space}_desc-aud-pseudo-minus-noise-psts_plot.png'
+        plot_file = output_sub_dir / plot_filename
+        plt.savefig(plot_file, dpi=200, bbox_inches='tight')
+
+        for session, contrast in vis_contrasts.items():
+            froi_psc = contrast.effect[0][froi_map].mean()
+            psc_df = pd.DataFrame({'subject': f'sub-{subject}',
+                                   'session': f'ses-{session}',
+                                   'froi_psc': froi_psc},
+                                  index=[0])
+            psc_dfs.append(psc_df)
+
+        corr_df = compute_pattern_stability(layout, subject, task, space,
+                                            fd_threshold, hrf_model, roi_map)
+        corr_dfs.append(corr_df)
+
+    output_group_dir = output_dir / 'nilearn/sub-group'
+    output_group_dir.mkdir(exist_ok=True, parents=True)
+
+    psc_df = pd.concat(psc_dfs)
+    psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-vis-pseudo-minus-noise-psts_psc.csv'
+    psc_df_file = output_group_dir / psc_df_filename
+    psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
+
+    corr_df = pd.concat(corr_dfs)
+    corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_corr.csv'
+    corr_df_file = output_group_dir / corr_df_filename
+    corr_df.to_csv(corr_df_file, index=False, float_format='%.4f')
+
+
 def compute_session_contrasts(layout, subject, task, space, fd_threshold,
                               hrf_model):
     """Computes auditory + visual univariate GLM contrasts for all sessions."""
@@ -303,79 +380,5 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
                    var_name='condition', value_name='mean_corr')
 
 
-task = 'language'
-space = 'fsnative'
-fd_threshold = 2.4
-hrf_model = 'spm'
-froi_contrast_label = 'a-pseudo-minus-noise'
-psc_contrast_label = 'v-pseudo-minus-noise'
-roi_ixs = 129
-n_top_vertices = 500
-
-derivatives_dir = Path(__file__).parent.parent
-bids_dir = derivatives_dir.parent
-fmriprep_dir = derivatives_dir / 'fmriprep'
-freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
-output_dir = derivatives_dir / 'nilearn'
-
-indexer = BIDSLayoutIndexer(force_index=str(freesurfer_dir))
-layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir], indexer=indexer)
-
-fsaverage_dir = Path(fetch_fsaverage(freesurfer_dir))
-annot_file = fsaverage_dir / 'label/lh.HCPMMP1_combined.annot'
-
-psc_dfs = []
-corr_dfs = []
-for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
-
-    print(f'\nPrecessing subject sub-{subject}\n')
-
-    aud_contrasts, vis_contrasts = compute_session_contrasts(layout, subject,
-                                                             task, space,
-                                                             fd_threshold,
-                                                             hrf_model)
-
-    psc_map, var_map, t_map = compute_fixed_effects(aud_contrasts.values())
-
-    roi_map = make_glasser_roi_map(
-        derivatives_dir, freesurfer_dir, subject, roi_ixs)
-
-    t_map_roi = t_map * roi_map
-    top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
-    froi_map = np.zeros_like(t_map_roi, dtype='int')
-    froi_map[top_ixs] = 1
-
-    _ = make_surfplot(layout, subject, t_map, roi_map, froi_map,
-                      cbar_label='Spoken pseudowords\nminus noise ($t$)',
-                      vmin=-11.0, vmax=11.0)
-
-    output_sub_dir = output_dir / f'nilearn/sub-{subject}'
-    output_sub_dir.mkdir(exist_ok=True, parents=True)
-    plot_filename = f'sub-{subject}_task-{task}_space-{space}_desc-{froi_contrast_label}_plot.png'
-    plot_file = output_sub_dir / plot_filename
-    plt.savefig(plot_file, dpi=200, bbox_inches='tight')
-
-    for session, contrast in vis_contrasts.items():
-        froi_psc = contrast.effect[0][froi_map].mean()
-        psc_df = pd.DataFrame({'subject': f'sub-{subject}',
-                               'session': f'ses-{session}',
-                               'froi_psc': froi_psc},
-                              index=[0])
-        psc_dfs.append(psc_df)
-
-    corr_df = compute_pattern_stability(layout, subject, task, space,
-                                        fd_threshold, hrf_model, roi_map)
-    corr_dfs.append(corr_df)
-
-output_group_dir = output_dir / 'nilearn/sub-group'
-output_group_dir.mkdir(exist_ok=True, parents=True)
-
-psc_df = pd.concat(psc_dfs)
-psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-vis-pseudo-minus-noise-psts_psc.csv'
-psc_df_file = output_group_dir / psc_df_filename
-psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
-
-corr_df = pd.concat(corr_dfs)
-corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_corr.csv'
-corr_df_file = output_group_dir / corr_df_filename
-corr_df.to_csv(corr_df_file, index=False, float_format='%.4f')
+if __name__ == '__main__':
+    main()
