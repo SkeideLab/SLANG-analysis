@@ -132,6 +132,25 @@ def compute_fixed_effects(contrasts):
     return psc_maps[0], var_maps[0], t_maps[0]
 
 
+def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
+    """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
+
+    derivatives_dataset = Dataset(derivatives_dir)
+    atlas_files = surf_to_surf(derivatives_dataset, freesurfer_dir,
+                               source_subject='fsaverage',
+                               target_subject=f'sub-{subject}',
+                               sval_filename='HCPMMP1.annot')
+
+    atlas_map = np.concatenate([load_surf_data(f) for f in atlas_files])
+
+    if isinstance(roi_ixs, (int, float, str)):
+        roi_ixs = [int(roi_ixs)]
+    else:
+        roi_ixs = [int(ix) for ix in roi_ixs]
+
+    return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
+
+
 def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
                  target_subject, sval_filename, tval_filename=None):
     """Uses the FreeSurfer container to convert surface data between different
@@ -175,7 +194,7 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
             derivatives_dataset.containers_run(
                 cmd, container_name='code/containers/neurodesk-freesurfer',
                 inputs=[str(input_file)], outputs=[str(output_file)],
-                message=f'Convert surface annotations from {source_subject} to {subject}',
+                message=f'Convert surface annotations from {source_subject} to {target_subject}',
                 explicit=True)
 
         else:
@@ -184,25 +203,6 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
         output_files.append(output_file)
 
     return output_files
-
-
-def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
-    """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
-
-    derivatives_dataset = Dataset(derivatives_dir)
-    atlas_files = surf_to_surf(derivatives_dataset, freesurfer_dir,
-                               source_subject='fsaverage',
-                               target_subject=f'sub-{subject}',
-                               sval_filename='HCPMMP1.annot')
-
-    atlas_map = np.concatenate([load_surf_data(f) for f in atlas_files])
-
-    if isinstance(roi_ixs, (int, float, str)):
-        roi_ixs = [int(roi_ixs)]
-    else:
-        roi_ixs = [int(ix) for ix in roi_ixs]
-
-    return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
 
 
 def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
