@@ -17,8 +17,8 @@ from surfplot import Plot
 
 
 def compute_session_contrasts(layout, subject, task, space, fd_threshold,
-                              hrf_model, contrast_defs):
-    """Compute a dictionary and data frame of contrasts for each session."""
+                              hrf_model):
+    """Computes auditory + visual univariate GLM contrasts for all sessions."""
 
     aud_contrasts = {}
     vis_contrasts = {}
@@ -46,7 +46,7 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
 
 def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
                 use_single_trials=False):
-    """Fits the first-level GLM on surface data for a single session."""
+    """Fits a first-level GLM on the surface data for a single session."""
 
     event_cols = ['onset', 'duration', 'trial_type']
     events = layout.get_collections('run', 'events', subject=subject,
@@ -65,7 +65,6 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
     surf_files = layout.get('filename', scope='derivatives', subject=subject,
                             session=session, task=task, space=space,
                             suffix='bold', extension='.func.gii')
-
     texture = np.concatenate([load_surf_data(f) for f in surf_files]).T
 
     n_scans = texture.shape[0]
@@ -73,8 +72,8 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
     t_r = layout.get_metadata(surf_files[0])['RepetitionTime']
     frame_times = start_time + t_r * np.arange(n_scans)
 
-    # Necessary to get confounds via *volumetric* fMRIPrep outputs
-    # Due to https://github.com/nilearn/nilearn/issues/3479 and
+    # It's necessary to get confound regressors via the *volumetric* fMRIPrep
+    # outputs due to https://github.com/nilearn/nilearn/issues/3479 and
     # https://github.com/nilearn/nilearn/blob/b1fa2e/nilearn/interfaces/fmriprep/load_confounds_utils.py#L19
     vol_file = layout.get('filename', scope='derivatives', subject=subject,
                           session=session, task=task, space='T1w',
@@ -108,7 +107,7 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
 
 def compute_psc_contrast(labels, estimates, design_matrix,
                          conditions_plus, conditions_minus):
-    """Extracts a contrast (incl. percent signal change) from the GLM."""
+    """Computes a GLM-based contrast with betas in units of percent signal change."""
 
     contrast_values = np.zeros(design_matrix.shape[1])
 
@@ -122,7 +121,7 @@ def compute_psc_contrast(labels, estimates, design_matrix,
 
 
 def contrast_to_df(contrast, label, subject, session):
-    """Converts a Nilearn contrast object to data frame."""
+    """Converts a Nilearn contrast object to a pandas data frame."""
 
     contrast_df = pd.DataFrame({
         'subject': f'sub-{subject}',
@@ -138,7 +137,7 @@ def contrast_to_df(contrast, label, subject, session):
 
 
 def compute_fixed_effects(contrasts):
-    """Computes fixed-effects model from a set of first level contrasts."""
+    """Computes a fixed-effects model from a list of first level contrasts."""
 
     effects = [contrast.effect for contrast in contrasts]
     variances = [contrast.variance for contrast in contrasts]
@@ -151,7 +150,9 @@ def compute_fixed_effects(contrasts):
 
 def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
                  target_subject, sval_filename, tval_filename=None):
-    """Uses FreeSurfer to convert fsaverage surface annotations to fsnative."""
+    """Uses the FreeSurfer container to convert surface data between different
+    subjects; e.g., to convert a parcellation (`.annot`) defined in fsaverage
+    space to the fsnative space of a single subject."""
 
     freesurfer_dir = Path(freesurfer_dir)
 
@@ -183,7 +184,7 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
             cmd = ' '.join([str(elem) for elem in cmd])
             cmd = f'-c \'{cmd}\''  # See https://stackoverflow.com/a/62313159
 
-            # # To use Docker instead of Singularity
+            # # To use Docker instead of Singularity:
             # from os import environ
             # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
 
@@ -240,6 +241,9 @@ def make_surfplot(
         _ = plot.add_layer(curv_map_sign, cmap='Greys',
                            color_range=[-8.0, 4.0], cbar=False)
 
+    # TODO: Use the `cmcrameri` or `palettable` package for the manauga
+    # colormap once they have been updated to Scientific Color Maps 8.
+    # Remember to also remove Nilearn's `cold_hot`.
     from matplotlib.colors import LinearSegmentedColormap
     cmap_file = '/Users/alexander/Downloads/ScientificColourMaps8/managua/managua.txt'
     cmap_data = np.loadtxt(cmap_file)
@@ -262,7 +266,9 @@ def make_surfplot(
 
 def compute_pattern_stability(layout, subject, task, space, fd_threshold,
                               hrf_model, roi_map=None):
-    """Compute single-trial pattern stability for each session and condition."""
+    """Compute single-trial pattern stability for each session and condition.
+    Pattern stability is defined as the average correlation between all pairs
+    of trials within a condition."""
 
     conditions = ['audios_pseudo', 'audios_noise',
                   'images_pseudo', 'images_noise']
@@ -275,14 +281,16 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
                                                        fd_threshold, hrf_model,
                                                        use_single_trials=True)
 
+        design_cols = design_matrix.columns.str
         for condition in conditions:
 
-            condition_corrs = []
-            trial_ixs = np.where(
-                design_matrix.columns.str.startswith(condition))[0]
+            trial_ixs = np.where(design_cols.startswith(condition))[0]
             trial_pairs = list(combinations(trial_ixs, 2))
+
             n_pairs = len(trial_pairs)
             print(f'Correlating {n_pairs} pairs of trials for "{condition}"')
+
+            condition_corrs = []
             for ixs in trial_pairs:
 
                 effect_maps = []
@@ -315,8 +323,6 @@ task = 'language'
 space = 'fsnative'
 fd_threshold = 2.4
 hrf_model = 'spm'
-contrast_defs = {'a-pseudo-minus-noise': (['audios_pseudo'], ['audios_noise']),
-                 'v-pseudo-minus-noise': (['images_pseudo'], ['images_noise'])}
 froi_contrast_label = 'a-pseudo-minus-noise'
 psc_contrast_label = 'v-pseudo-minus-noise'
 roi_ixs = 129
@@ -340,9 +346,10 @@ for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
     print(f'\nPrecessing subject sub-{subject}\n')
 
-    aud_contrasts, vis_contrasts = \
-        compute_session_contrasts(layout, subject, task, space, fd_threshold,
-                                  hrf_model, contrast_defs)
+    aud_contrasts, vis_contrasts = compute_session_contrasts(layout, subject,
+                                                             task, space,
+                                                             fd_threshold,
+                                                             hrf_model)
 
     psc_map, var_map, t_map = compute_fixed_effects(aud_contrasts.values())
 
@@ -380,11 +387,11 @@ output_group_dir = output_dir / 'nilearn/sub-group'
 output_group_dir.mkdir(exist_ok=True, parents=True)
 
 psc_df = pd.concat(psc_dfs)
-psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-{froi_contrast_label}_psc.csv'
+psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-vis-pseudo-minus-noise-psts_psc.csv'
 psc_df_file = output_group_dir / psc_df_filename
 psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
 
 corr_df = pd.concat(corr_dfs)
-corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-{froi_contrast_label}_corr.csv'
+corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_corr.csv'
 corr_df_file = output_group_dir / corr_df_filename
 corr_df.to_csv(corr_df_file, index=False, float_format='%.4f')
