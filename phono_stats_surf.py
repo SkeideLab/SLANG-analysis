@@ -1,3 +1,29 @@
+"""Influence of learning to read on multi-modal language regions (pSTS).
+
+Using univariate (GLM) and multivariate (pattern stability) analysis on the
+cortical surface of fMRIPrep-preprocessed data.
+
+Analysis steps / goals:
+
+1. Identify vertices in the posterior superior temporal sulcus ROI (pSTS;
+   defined in the Glasser et al., 2016 atlas) that are sensitve to the the
+   contrast of *auditory* pseudowords minus noise. I refer to this as the
+   "fROI" (functional region of interest). It's computed by taking the top *n*
+   (here 500) vertices from a fixed-effects model accross all sessions.
+
+2. Compute the percent signal change (PSC) for the contrast of *visual*
+   pseudowords minus noise in the fROI, separately for each session. We execpt
+   the PSC to increase as children learn to connect written syllables to their
+   speech sounds, i.e., that learning to read makes them recruit pSTS regions
+   that had already been tuned to spoken language.
+
+3. For each condition, compute the multivariate pattern stability (PS) in the
+   fROI, separately for each session. We expect the PS to increase as children
+   learn to read, especially for visual pseudowords. PS is defined as the
+   average correlation between the fROI pattern for each pair of trials from
+   the same condition.
+"""
+
 from itertools import combinations
 from pathlib import Path
 
