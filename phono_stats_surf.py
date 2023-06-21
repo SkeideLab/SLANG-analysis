@@ -156,14 +156,8 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
                                     session=session)[0]
     events = events.to_df()[event_cols]
 
-    if use_single_trials:  # See https://nilearn.github.io/dev/auto_examples/07_advanced/plot_beta_series.html
-        conditions = events['trial_type'].unique()
-        condition_counter = {c: 0 for c in conditions}
-        for trial_ix, trial in events.iterrows():
-            condition = trial['trial_type']
-            condition_counter[condition] += 1
-            trial_name = f'{condition}_{condition_counter[condition]:02d}'
-            events.loc[trial_ix, 'trial_type'] = trial_name
+    if use_single_trials:
+        events = events_to_single_trials(events)
 
     surf_files = layout.get('filename', scope='derivatives', subject=subject,
                             session=session, task=task, space=space,
@@ -175,16 +169,8 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
     t_r = layout.get_metadata(surf_files[0])['RepetitionTime']
     frame_times = start_time + t_r * np.arange(n_scans)
 
-    # It's necessary to get confound regressors via the *volumetric* fMRIPrep
-    # outputs due to https://github.com/nilearn/nilearn/issues/3479 and
-    # https://github.com/nilearn/nilearn/blob/b1fa2e/nilearn/interfaces/fmriprep/load_confounds_utils.py#L19
-    vol_file = layout.get('filename', scope='derivatives', subject=subject,
-                          session=session, task=task, space='T1w',
-                          desc='preproc', extension='.nii.gz')[0]
-    confounds, sample_mask = load_confounds(
-        vol_file, strategy=('motion', 'high_pass', 'wm_csf', 'scrub', 'compcor'),
-        motion='basic', wm_csf='basic', scrub=0, fd_threshold=fd_threshold,
-        std_dvars_threshold=None, compcor='anat_combined', n_compcor=6)
+    confounds, sample_mask = get_confounds(layout, subject, session, task,
+                                           fd_threshold)
 
     design_matrix = make_first_level_design_matrix(frame_times, events,
                                                    hrf_model, drift_model=None,
@@ -206,6 +192,39 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
     labels, estimates = run_glm(texture, design_matrix.values)
 
     return design_matrix, labels, estimates
+
+
+def events_to_single_trials(events):
+    """Converts the BIDS events dataframe to one separate condition per trial.
+    See https://nilearn.github.io/dev/auto_examples/07_advanced/plot_beta_series.html"""
+
+    new_events = events.copy()
+    conditions = new_events['trial_type'].unique()
+    condition_counter = {c: 0 for c in conditions}
+    for trial_ix, trial in new_events.iterrows():
+        condition = trial['trial_type']
+        condition_counter[condition] += 1
+        trial_name = f'{condition}_{condition_counter[condition]:02d}'
+        new_events.loc[trial_ix, 'trial_type'] = trial_name
+
+    return new_events
+
+
+def get_confounds(layout, subject, session, task, fd_threshold):
+    """Loads confound regressors and sample mask (for scrubbing) from fMRIPrep
+    outputs."""
+
+    # It's necessary to get confound regressors via the *volumetric* fMRIPrep
+    # outputs due to https://github.com/nilearn/nilearn/issues/3479 and
+    # https://github.com/nilearn/nilearn/blob/b1fa2e/nilearn/interfaces/fmriprep/load_confounds_utils.py#L19
+    vol_file = layout.get('filename', scope='derivatives', subject=subject,
+                          session=session, task=task, space='T1w',
+                          desc='preproc', extension='.nii.gz')[0]
+
+    return load_confounds(
+        vol_file, strategy=('motion', 'high_pass', 'wm_csf', 'scrub', 'compcor'),
+        motion='basic', wm_csf='basic', scrub=0, fd_threshold=fd_threshold,
+        std_dvars_threshold=None, compcor='anat_combined', n_compcor=6)
 
 
 def compute_psc_contrast(labels, estimates, design_matrix,
@@ -379,20 +398,8 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
 
             condition_corrs = []
             for ixs in trial_pairs:
-
-                effect_maps = []
-                for ix in ixs:
-
-                    con_val = np.zeros(design_matrix.shape[1])
-                    con_val[ix] = 1.0
-                    contrast = compute_contrast(labels, estimates, con_val)
-
-                    effect_map = contrast.effect[0]
-                    if roi_map is not None:
-                        effect_map = effect_map[roi_map.astype(bool)]
-                    effect_maps.append(effect_map)
-
-                corr = np.corrcoef(*effect_maps)[0, 1]
+                corr = correlate_trials(design_matrix, ixs,
+                                        labels, estimates, roi_map)
                 condition_corrs.append(corr)
 
             corr_dict[condition][session] = np.mean(condition_corrs)
@@ -404,6 +411,25 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
 
     return pd.melt(corr_df, id_vars=['subject', 'session'],
                    var_name='condition', value_name='mean_corr')
+
+
+def correlate_trials(design_matrix, ixs, labels, estimates, roi_map=None):
+    """Computes the whole-brain or ROI pattern correlation between a pair of
+    trials in the design matrix."""
+
+    effect_maps = []
+    for ix in ixs:
+
+        con_val = np.zeros(design_matrix.shape[1])
+        con_val[ix] = 1.0
+        contrast = compute_contrast(labels, estimates, con_val)
+
+        effect_map = contrast.effect[0]
+        if roi_map is not None:
+            effect_map = effect_map[roi_map.astype(bool)]
+        effect_maps.append(effect_map)
+
+    return np.corrcoef(*effect_maps)[0, 1]
 
 
 if __name__ == '__main__':
