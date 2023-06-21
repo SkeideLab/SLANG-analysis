@@ -78,9 +78,9 @@ def main():
         roi_map = make_glasser_roi_map(derivatives_dir, freesurfer_dir,
                                        subject, roi_ixs)
 
-        t_map_roi = t_map * roi_map
-        top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
-        froi_map = np.zeros_like(t_map_roi, dtype='int')
+        t_map_roi = t_map * roi_map  # Mask t map with anatomical ROI
+        top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]  # Get n top vertices (i.e., highest t values)
+        froi_map = np.zeros_like(t_map_roi, dtype='int')  # Create fROI map where 1 = top vertices
         froi_map[top_ixs] = 1
 
         _ = make_surfplot(layout, subject, t_map, roi_map, froi_map,
