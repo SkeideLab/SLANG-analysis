@@ -120,22 +120,6 @@ def compute_psc_contrast(labels, estimates, design_matrix,
     return compute_contrast(labels, estimates, contrast_values)
 
 
-def contrast_to_df(contrast, label, subject, session):
-    """Converts a Nilearn contrast object to a pandas data frame."""
-
-    contrast_df = pd.DataFrame({
-        'subject': f'sub-{subject}',
-        'session': f'ses-{session}',
-        'contrast': label,
-        'effect': contrast.effect_size(),
-        'variance': contrast.effect_variance(),
-        'stat': contrast.stat()})
-
-    contrast_df.insert(3, 'node', contrast_df.index)
-
-    return contrast_df
-
-
 def compute_fixed_effects(contrasts):
     """Computes a fixed-effects model from a list of first level contrasts."""
 
