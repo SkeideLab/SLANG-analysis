@@ -90,11 +90,13 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
 
     texture = texture[sample_mask]
     design_matrix = design_matrix.iloc[sample_mask]
-
     condition_cols = set(design_matrix.columns) - set(confounds.columns)
-    for col in condition_cols:  # Scale task regressors to max of 1 for PSC
-        scale_factor = 1.0 / max(design_matrix[col])
-        design_matrix[col] = design_matrix[col] * scale_factor
+    for col in condition_cols:
+        if design_matrix[col].sum() == 0.0:  # Remove trial regressor if scrubbed
+            design_matrix = design_matrix.drop(col, axis=1)
+        else:
+            scale_factor = 1.0 / max(design_matrix[col])  # Scaling for PSC
+            design_matrix[col] = design_matrix[col] * scale_factor
 
     mean_texture = texture.mean(axis=0)
     texture = 100.0 * (texture / mean_texture - 1.0)
@@ -258,6 +260,57 @@ def make_surfplot(
     return plot.build()
 
 
+def compute_pattern_stability(layout, subject, task, space, fd_threshold,
+                              hrf_model, roi_map=None):
+    """Compute single-trial pattern stability for each session and condition."""
+
+    conditions = ['audios_pseudo', 'audios_noise',
+                  'images_pseudo', 'images_noise']
+    sessions = sorted(layout.get_sessions(subject=subject, desc='preproc'))
+    corr_dict = {condition: {} for condition in conditions}
+    for session in sessions:
+
+        design_matrix, labels, estimates = compute_glm(layout, subject,
+                                                       session, task, space,
+                                                       fd_threshold, hrf_model,
+                                                       use_single_trials=True)
+
+        for condition in conditions:
+
+            condition_corrs = []
+            trial_ixs = np.where(
+                design_matrix.columns.str.startswith(condition))[0]
+            trial_pairs = list(combinations(trial_ixs, 2))
+            n_pairs = len(trial_pairs)
+            print(f'Correlating {n_pairs} pairs of trials for "{condition}"')
+            for ixs in trial_pairs:
+
+                effect_maps = []
+                for ix in ixs:
+
+                    con_val = np.zeros(design_matrix.shape[1])
+                    con_val[ix] = 1.0
+                    contrast = compute_contrast(labels, estimates, con_val)
+
+                    effect_map = contrast.effect[0]
+                    if roi_map is not None:
+                        effect_map = effect_map[roi_map.astype(bool)]
+                    effect_maps.append(effect_map)
+
+                corr = np.corrcoef(*effect_maps)[0, 1]
+                condition_corrs.append(corr)
+
+            corr_dict[condition][session] = np.mean(condition_corrs)
+
+    corr_df = pd.DataFrame(corr_dict)
+    corr_df = corr_df.reset_index(names='session')
+    corr_df['session'] = 'ses-' + corr_df['session'].astype(str)
+    corr_df.insert(0, 'subject', f'sub-{subject}')
+
+    return pd.melt(corr_df, id_vars=['subject', 'session'],
+                   var_name='condition', value_name='mean_corr')
+
+
 task = 'language'
 space = 'fsnative'
 fd_threshold = 2.4
@@ -282,6 +335,7 @@ fsaverage_dir = Path(fetch_fsaverage(freesurfer_dir))
 annot_file = fsaverage_dir / 'label/lh.HCPMMP1_combined.annot'
 
 psc_dfs = []
+corr_dfs = []
 for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
     print(f'\nPrecessing subject sub-{subject}\n')
@@ -312,15 +366,25 @@ for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
     for session, contrast in vis_contrasts.items():
         froi_psc = contrast.effect[0][froi_map].mean()
-        psc_df = pd.DataFrame({'subject': subject,
-                               'session': session,
+        psc_df = pd.DataFrame({'subject': f'sub-{subject}',
+                               'session': f'ses-{session}',
                                'froi_psc': froi_psc},
                               index=[0])
         psc_dfs.append(psc_df)
 
+    corr_df = compute_pattern_stability(layout, subject, task, space,
+                                        fd_threshold, hrf_model, roi_map)
+    corr_dfs.append(corr_df)
+
 output_group_dir = output_dir / 'nilearn/sub-group'
 output_group_dir.mkdir(exist_ok=True, parents=True)
+
 psc_df = pd.concat(psc_dfs)
 psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-{froi_contrast_label}_psc.csv'
 psc_df_file = output_group_dir / psc_df_filename
 psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
+
+corr_df = pd.concat(corr_dfs)
+corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-{froi_contrast_label}_corr.csv'
+corr_df_file = output_group_dir / corr_df_filename
+corr_df.to_csv(corr_df_file, index=False, float_format='%.4f')
