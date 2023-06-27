@@ -127,19 +127,16 @@ def main():
     output_group_dir.mkdir(exist_ok=True, parents=True)
 
     psc_df = pd.concat(psc_dfs)
-    psc_df_filename = f'sub-group_task-{task}_space-{space}_desc-vis-pseudo-minus-noise-psts_psc.csv'
-    psc_df_file = output_group_dir / psc_df_filename
-    psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
+    save_df(psc_df, output_group_dir, subject='group', task=task, space=space,
+            desc='vis-pseudo-minus-noise-psts')
 
     distance_df = pd.concat(distance_dfs)
-    distance_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-distance-psts_distance.csv'
-    distance_df_file = output_group_dir / distance_df_filename
-    distance_df.to_csv(distance_df_file, index=False, float_format='%.4f')
+    save_df(distance_df, output_group_dir, subject='group', task=task,
+            space=space, desc='vis-aud-distance-psts')
 
     stability_df = pd.concat(stability_dfs)
-    stability_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_stability.csv'
-    stability_df_file = output_group_dir / stability_df_filename
-    stability_df.to_csv(stability_df_file, index=False, float_format='%.4f')
+    save_df(stability_df, output_group_dir, subject='group', task=task,
+            space=space, desc='pattern-stability-psts')
 
 
 def compute_session_contrasts(layout, subject, task, hemi, space, fd_threshold,
@@ -498,6 +495,14 @@ def correlate_trials(design_matrix, ixs, labels, estimates, roi_map=None):
         effect_maps.append(effect_map)
 
     return np.corrcoef(*effect_maps)[0, 1]
+
+
+def save_df(df, output_dir, subject, task, space, desc):
+    """Saves a pandas DataFrame to a CSV file."""
+
+    filename = f'sub-{subject}_task-{task}_space-{space}_desc-{desc}_df.csv'
+    file = output_dir / filename
+    df.to_csv(file, index=False, float_format='%.4f')
 
 
 if __name__ == '__main__':
