@@ -370,6 +370,30 @@ def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
     return plot.build()
 
 
+def compute_distances(subject, aud_contrasts, vis_contrasts, roi_map=None):
+    """Compute pairwise cosine/correlation distance between condition beta maps."""
+
+    sessions = aud_contrasts.keys()
+
+    corrs = []
+    for aud_contrast, vis_contrast in zip(aud_contrasts.values(),
+                                          vis_contrasts.values()):
+
+        if roi_map is None:
+            aud_map = aud_contrast.effect
+            vis_map = vis_contrast.effect
+        else:
+            aud_map = aud_contrast.effect[roi_map]
+            vis_map = vis_contrast.effect[roi_map]
+
+        corr = np.corrcoef(aud_map, vis_map)[0, 1]
+        corrs.append(corr)
+
+    return pd.DataFrame({'subject': f'sub-{subject}',
+                         'session': [f'ses-{ses}' for ses in sessions],
+                         'corr': corrs})
+
+
 def compute_pattern_stability(layout, subject, task, space, fd_threshold,
                               hrf_model, roi_map=None):
     """Compute single-trial pattern stability for each session and condition.
