@@ -50,7 +50,7 @@ def main():
     fd_threshold = 2.4
     hrf_model = 'spm'
     roi_ixs = 129
-    n_top_vertices = 250
+    perc_top_vertices = 0.25
 
     derivatives_dir = Path(__file__).parent.parent
     bids_dir = derivatives_dir.parent
@@ -87,19 +87,16 @@ def main():
                                            subject, hemi, roi_ixs)
             roi_maps.append(roi_map)
 
-            t_map_roi = t_map * roi_map  # Mask t map with anatomical ROI
-            # Get n top vertices (i.e., highest t values)
-            top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
-            # Create fROI map where 1 = top vertices
-            froi_map = np.zeros_like(t_map_roi, dtype='int')
-            froi_map[top_ixs] = 1
+            froi_map = make_froi_map(t_map, roi_map, perc_top_vertices)
             froi_maps.append(froi_map)
+            n_froi_vertices = froi_map.sum()
 
             for session, contrast in vis_contrasts.items():
                 psc = contrast.effect[0][froi_map].mean()
                 psc_df = pd.DataFrame({'subject': f'sub-{subject}',
                                        'session': f'ses-{session}',
                                        'hemi': hemi,
+                                       'n_froi_vertices': n_froi_vertices,
                                        'psc': psc},
                                       index=[0])
                 psc_dfs.append(psc_df)
@@ -283,8 +280,8 @@ def compute_fixed_effects(contrasts):
     return psc_maps[0], var_maps[0], t_maps[0]
 
 
-def make_glasser_roi_map(
-        derivatives_dir, freesurfer_dir, subject, hemi, roi_ixs):
+def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, hemi,
+                         roi_ixs):
     """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
 
     derivatives_dataset = Dataset(derivatives_dir)
@@ -352,6 +349,23 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
         print(f'Output surface file "{output_file}" exists, nothing to do')
 
     return output_file
+
+
+def make_froi_map(t_map, roi_map, perc_top_vertices):
+    """Create functional region of interest based on t-values in the ROI."""
+
+    # Get number of top vertices to extract from the ROI
+    n_top_vertices = int(np.round(perc_top_vertices * np.sum(roi_map)))
+
+    # Get indices of top vertices (i.e., vertices with highest t-values)
+    t_map_roi = t_map * roi_map
+    top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
+
+    # Create fROI map (i.e., 1s at the top vertices and 0s elsewhere)
+    froi_map = np.zeros_like(t_map_roi, dtype='int')
+    froi_map[top_ixs] = 1
+
+    return froi_map
 
 
 def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
