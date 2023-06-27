@@ -50,7 +50,7 @@ def main():
     fd_threshold = 2.4
     hrf_model = 'spm'
     roi_ixs = 129
-    n_top_vertices = 500
+    n_top_vertices = 250
 
     derivatives_dir = Path(__file__).parent.parent
     bids_dir = derivatives_dir.parent
@@ -64,25 +64,58 @@ def main():
     fsaverage_dir = fetch_fsaverage(freesurfer_dir)
 
     psc_dfs = []
-    corr_dfs = []
+    distance_dfs = []
+    stability_dfs = []
     for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
 
         print(f'\nPrecessing subject sub-{subject}\n')
 
-        aud_contrasts, vis_contrasts = \
-            compute_session_contrasts(layout, subject, task, space,
-                                      fd_threshold, hrf_model)
+        t_maps = []
+        roi_maps = []
+        froi_maps = []
+        for hemi in ['L', 'R']:
 
-        psc_map, var_map, t_map = compute_fixed_effects(aud_contrasts.values())
+            aud_contrasts, vis_contrasts = \
+                compute_session_contrasts(layout, subject, task, hemi, space,
+                                          fd_threshold, hrf_model)
 
-        roi_map = make_glasser_roi_map(derivatives_dir, freesurfer_dir,
-                                       subject, roi_ixs)
+            psc_map, var_map, t_map = \
+                compute_fixed_effects(aud_contrasts.values())
+            t_maps.append(t_map)
 
-        t_map_roi = t_map * roi_map  # Mask t map with anatomical ROI
-        top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]  # Get n top vertices (i.e., highest t values)
-        froi_map = np.zeros_like(t_map_roi, dtype='int')  # Create fROI map where 1 = top vertices
-        froi_map[top_ixs] = 1
+            roi_map = make_glasser_roi_map(derivatives_dir, freesurfer_dir,
+                                           subject, hemi, roi_ixs)
+            roi_maps.append(roi_map)
 
+            t_map_roi = t_map * roi_map  # Mask t map with anatomical ROI
+            # Get n top vertices (i.e., highest t values)
+            top_ixs = np.argsort(t_map_roi)[::-1][:n_top_vertices]
+            # Create fROI map where 1 = top vertices
+            froi_map = np.zeros_like(t_map_roi, dtype='int')
+            froi_map[top_ixs] = 1
+            froi_maps.append(froi_map)
+
+            for session, contrast in vis_contrasts.items():
+                psc = contrast.effect[0][froi_map].mean()
+                psc_df = pd.DataFrame({'subject': f'sub-{subject}',
+                                       'session': f'ses-{session}',
+                                       'hemi': hemi,
+                                       'psc': psc},
+                                      index=[0])
+                psc_dfs.append(psc_df)
+
+            distance_df = compute_distances(subject, hemi, aud_contrasts,
+                                            vis_contrasts, roi_map=None)
+            distance_dfs.append(distance_df)
+
+            stability_df = compute_pattern_stability(layout, subject, task,
+                                                     hemi, space, fd_threshold,
+                                                     hrf_model, roi_map)
+            stability_dfs.append(stability_df)
+
+        t_map = np.concatenate(t_maps, axis=0)
+        roi_map = np.concatenate(roi_maps, axis=0)
+        froi_map = np.concatenate(froi_maps, axis=0)
         _ = make_surfplot(layout, subject, t_map, roi_map, froi_map,
                           cbar_label='Spoken pseudowords\nminus noise ($t$)',
                           vmin=-11.0, vmax=11.0)
@@ -93,18 +126,6 @@ def main():
         plot_file = output_sub_dir / plot_filename
         plt.savefig(plot_file, dpi=200, bbox_inches='tight')
 
-        for session, contrast in vis_contrasts.items():
-            froi_psc = contrast.effect[0][froi_map].mean()
-            psc_df = pd.DataFrame({'subject': f'sub-{subject}',
-                                   'session': f'ses-{session}',
-                                   'froi_psc': froi_psc},
-                                  index=[0])
-            psc_dfs.append(psc_df)
-
-        corr_df = compute_pattern_stability(layout, subject, task, space,
-                                            fd_threshold, hrf_model, roi_map)
-        corr_dfs.append(corr_df)
-
     output_group_dir = output_dir / 'nilearn/sub-group'
     output_group_dir.mkdir(exist_ok=True, parents=True)
 
@@ -113,13 +134,18 @@ def main():
     psc_df_file = output_group_dir / psc_df_filename
     psc_df.to_csv(psc_df_file, index=False, float_format='%.4f')
 
-    corr_df = pd.concat(corr_dfs)
-    corr_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_corr.csv'
-    corr_df_file = output_group_dir / corr_df_filename
-    corr_df.to_csv(corr_df_file, index=False, float_format='%.4f')
+    distance_df = pd.concat(distance_dfs)
+    distance_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-distance-psts_distance.csv'
+    distance_df_file = output_group_dir / distance_df_filename
+    distance_df.to_csv(distance_df_file, index=False, float_format='%.4f')
+
+    stability_df = pd.concat(stability_dfs)
+    stability_df_filename = f'sub-group_task-{task}_space-{space}_desc-pattern-stability-psts_stability.csv'
+    stability_df_file = output_group_dir / stability_df_filename
+    stability_df.to_csv(stability_df_file, index=False, float_format='%.4f')
 
 
-def compute_session_contrasts(layout, subject, task, space, fd_threshold,
+def compute_session_contrasts(layout, subject, task, hemi, space, fd_threshold,
                               hrf_model):
     """Computes auditory + visual univariate GLM contrasts for all sessions."""
 
@@ -130,8 +156,9 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
     for session in sessions:
 
         design_matrix, labels, estimates = compute_glm(layout, subject,
-                                                       session, task, space,
-                                                       fd_threshold, hrf_model,
+                                                       session, task, hemi,
+                                                       space, fd_threshold,
+                                                       hrf_model,
                                                        use_single_trials=False)
 
         aud_contrasts[session] = \
@@ -147,8 +174,8 @@ def compute_session_contrasts(layout, subject, task, space, fd_threshold,
     return aud_contrasts, vis_contrasts
 
 
-def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
-                use_single_trials=False):
+def compute_glm(layout, subject, session, task, hemi, space, fd_threshold,
+                hrf_model, use_single_trials=False):
     """Fits a first-level GLM on the surface data for a single session."""
 
     event_cols = ['onset', 'duration', 'trial_type']
@@ -160,9 +187,11 @@ def compute_glm(layout, subject, session, task, space, fd_threshold, hrf_model,
         events = events_to_single_trials(events)
 
     surf_files = layout.get('filename', scope='derivatives', subject=subject,
-                            session=session, task=task, space=space,
+                            session=session, task=task, hemi=hemi, space=space,
                             suffix='bold', extension='.func.gii')
-    texture = np.concatenate([load_surf_data(f) for f in surf_files]).T
+    assert len(surf_files) == 1, \
+        'There must be exactly one preprocessed surface file'
+    texture = load_surf_data(surf_files[0]).T
 
     n_scans = texture.shape[0]
     start_time = layout.get_metadata(surf_files[0])['StartTime']
@@ -254,16 +283,18 @@ def compute_fixed_effects(contrasts):
     return psc_maps[0], var_maps[0], t_maps[0]
 
 
-def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
+def make_glasser_roi_map(
+        derivatives_dir, freesurfer_dir, subject, hemi, roi_ixs):
     """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
 
     derivatives_dataset = Dataset(derivatives_dir)
-    atlas_files = surf_to_surf(derivatives_dataset, freesurfer_dir,
-                               source_subject='fsaverage',
-                               target_subject=f'sub-{subject}',
-                               sval_filename='HCPMMP1.annot')
+    freesurfer_hemi = 'lh' if hemi == 'L' else 'rh'
+    atlas_file = surf_to_surf(derivatives_dataset, freesurfer_dir,
+                              freesurfer_hemi, source_subject='fsaverage',
+                              target_subject=f'sub-{subject}',
+                              sval_filename='HCPMMP1.annot')
 
-    atlas_map = np.concatenate([load_surf_data(f) for f in atlas_files])
+    atlas_map = load_surf_data(atlas_file)
 
     if isinstance(roi_ixs, (int, float, str)):
         roi_ixs = [int(roi_ixs)]
@@ -273,8 +304,9 @@ def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, roi_ixs):
     return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
 
 
-def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
-                 target_subject, sval_filename, tval_filename=None):
+def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
+                 source_subject, target_subject, sval_filename,
+                 tval_filename=None):
     """Uses the FreeSurfer container to convert surface data between different
     subjects; e.g., to convert a parcellation (`.annot`) defined in fsaverage
     space to the fsnative space of a single subject."""
@@ -289,42 +321,37 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, source_subject,
     if tval_filename is None:
         tval_filename = sval_filename
 
-    output_files = []
-    for hemi in ['lh', 'rh']:
+    input_file = freesurfer_dir / \
+        f'{source_subject}/label/{freesurfer_hemi}.{sval_filename}'
+    output_file = freesurfer_dir / \
+        f'{target_subject}/label/{freesurfer_hemi}.{sval_filename}'
 
-        input_file = freesurfer_dir / \
-            f'{source_subject}/label/{hemi}.{sval_filename}'
-        output_file = freesurfer_dir / \
-            f'{target_subject}/label/{hemi}.{sval_filename}'
+    if not output_file.exists():
 
-        if not output_file.exists():
+        cmd = ['mri_surf2surf',
+               '--srcsubject', source_subject,
+               '--trgsubject', target_subject,
+               '--hemi', freesurfer_hemi,
+               *sval_flag,
+               '--tval', sval_filename,
+               '--sd', freesurfer_dir]
+        cmd = ' '.join([str(elem) for elem in cmd])
+        cmd = f'-c \'{cmd}\''  # See https://stackoverflow.com/a/62313159
 
-            cmd = ['mri_surf2surf',
-                   '--srcsubject', source_subject,
-                   '--trgsubject', target_subject,
-                   '--hemi', hemi,
-                   *sval_flag,
-                   '--tval', sval_filename,
-                   '--sd', freesurfer_dir]
-            cmd = ' '.join([str(elem) for elem in cmd])
-            cmd = f'-c \'{cmd}\''  # See https://stackoverflow.com/a/62313159
+        # # To use Docker instead of Singularity:
+        # from os import environ
+        # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
 
-            # # To use Docker instead of Singularity:
-            # from os import environ
-            # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
+        derivatives_dataset.containers_run(
+            cmd, container_name='code/containers/neurodesk-freesurfer',
+            inputs=[str(input_file)], outputs=[str(output_file)],
+            message=f'Convert surface annotations from {source_subject} to {target_subject}',
+            explicit=True)
 
-            derivatives_dataset.containers_run(
-                cmd, container_name='code/containers/neurodesk-freesurfer',
-                inputs=[str(input_file)], outputs=[str(output_file)],
-                message=f'Convert surface annotations from {source_subject} to {target_subject}',
-                explicit=True)
+    else:
+        print(f'Output surface file "{output_file}" exists, nothing to do')
 
-        else:
-            print(f'Output surface file "{output_file}" exists, nothing to do')
-
-        output_files.append(output_file)
-
-    return output_files
+    return output_file
 
 
 def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
@@ -333,10 +360,9 @@ def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
                   vmin=-2.0, vmax=2.0):
     """Plots a statistical and/or ROI map(s) on the inflated FreeSurfer surface."""
 
-    inflated_files = sorted(
-        layout.get(
-            'filename', subject=subject, suffix='inflated',
-            extension='surf.gii'))
+    inflated_files = sorted(layout.get('filename', subject=subject,
+                                       suffix='inflated',
+                                       extension='surf.gii'))
     plot = Plot(*inflated_files, views=views, size=size, zoom=zoom)
 
     if add_curv:
@@ -370,7 +396,8 @@ def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
     return plot.build()
 
 
-def compute_distances(subject, aud_contrasts, vis_contrasts, roi_map=None):
+def compute_distances(subject, hemi, aud_contrasts, vis_contrasts,
+                      roi_map=None):
     """Compute pairwise cosine/correlation distance between condition beta maps."""
 
     sessions = aud_contrasts.keys()
@@ -391,10 +418,11 @@ def compute_distances(subject, aud_contrasts, vis_contrasts, roi_map=None):
 
     return pd.DataFrame({'subject': f'sub-{subject}',
                          'session': [f'ses-{ses}' for ses in sessions],
-                         'corr': corrs})
+                         'hemi': hemi,
+                         'similarity': corrs})
 
 
-def compute_pattern_stability(layout, subject, task, space, fd_threshold,
+def compute_pattern_stability(layout, subject, task, hemi, space, fd_threshold,
                               hrf_model, roi_map=None):
     """Compute single-trial pattern stability for each session and condition.
     Pattern stability is defined as the average correlation between all pairs
@@ -403,12 +431,13 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
     conditions = ['audios_pseudo', 'audios_noise',
                   'images_pseudo', 'images_noise']
     sessions = sorted(layout.get_sessions(subject=subject, desc='preproc'))
-    corr_dict = {condition: {} for condition in conditions}
+    corrs = {condition: {} for condition in conditions}
     for session in sessions:
 
         design_matrix, labels, estimates = compute_glm(layout, subject,
-                                                       session, task, space,
-                                                       fd_threshold, hrf_model,
+                                                       session, task, hemi,
+                                                       space, fd_threshold,
+                                                       hrf_model,
                                                        use_single_trials=True)
 
         design_cols = design_matrix.columns.str
@@ -426,15 +455,16 @@ def compute_pattern_stability(layout, subject, task, space, fd_threshold,
                                         labels, estimates, roi_map)
                 condition_corrs.append(corr)
 
-            corr_dict[condition][session] = np.mean(condition_corrs)
+            corrs[condition][session] = np.mean(condition_corrs)
 
-    corr_df = pd.DataFrame(corr_dict)
-    corr_df = corr_df.reset_index(names='session')
-    corr_df['session'] = 'ses-' + corr_df['session'].astype(str)
-    corr_df.insert(0, 'subject', f'sub-{subject}')
+    df = pd.DataFrame(corrs)
+    df = df.reset_index(names='session')
+    df['session'] = 'ses-' + df['session'].astype(str)
+    df.insert(0, 'subject', f'sub-{subject}')
+    df.insert(2, 'hemi', hemi)
 
-    return pd.melt(corr_df, id_vars=['subject', 'session'],
-                   var_name='condition', value_name='mean_corr')
+    return pd.melt(df, id_vars=['subject', 'session', 'hemi'],
+                   var_name='condition', value_name='stability')
 
 
 def correlate_trials(design_matrix, ixs, labels, estimates, roi_map=None):
