@@ -27,6 +27,7 @@ Analysis steps / goals:
 from itertools import combinations
 from pathlib import Path
 
+import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -37,7 +38,6 @@ from nilearn.glm.contrasts import (_compute_fixed_effects_params,
                                    compute_contrast)
 from nilearn.glm.first_level import make_first_level_design_matrix, run_glm
 from nilearn.interfaces.fmriprep import load_confounds
-from nilearn.plotting.cm import cold_hot
 from nilearn.surface import load_surf_data
 from surfplot import Plot
 
@@ -367,8 +367,8 @@ def make_froi_map(t_map, roi_map, perc_top_vertices):
 
 def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
                   roi_map_2=None, add_curv=True, views='lateral',
-                  size=(1000, 300), zoom=2.0, cmap=cold_hot, cbar_label=None,
-                  vmin=-2.0, vmax=2.0):
+                  size=(1000, 300), zoom=2.0, cmap=cmc.managua_r,
+                  cbar_label=None, vmin=-2.0, vmax=2.0):
     """Plots a statistical and/or ROI map(s) on the inflated FreeSurfer surface."""
 
     inflated_files = sorted(layout.get('filename', subject=subject,
@@ -383,15 +383,6 @@ def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
         curv_map_sign = np.sign(curv_map)
         _ = plot.add_layer(curv_map_sign, cmap='Greys',
                            color_range=[-8.0, 4.0], cbar=False)
-
-    # TODO: Use the `cmcrameri` or `palettable` package for the manauga
-    # colormap once they have been updated to Scientific Color Maps 8.
-    # Remember to also remove Nilearn's `cold_hot`.
-    from matplotlib.colors import LinearSegmentedColormap
-    cmap_file = '/Users/alexander/Downloads/ScientificColourMaps8/managua/managua.txt'
-    cmap_data = np.loadtxt(cmap_file)
-    cmap = LinearSegmentedColormap.from_list(
-        'managua_r', np.flip(cmap_data, axis=0))
 
     if stat_map is not None:
         _ = plot.add_layer(stat_map, cmap=cmap, color_range=[vmin, vmax],
