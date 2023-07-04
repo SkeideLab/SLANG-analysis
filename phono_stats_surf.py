@@ -38,7 +38,8 @@ from nilearn.glm.contrasts import (_compute_fixed_effects_params,
                                    compute_contrast)
 from nilearn.glm.first_level import make_first_level_design_matrix, run_glm
 from nilearn.interfaces.fmriprep import load_confounds
-from nilearn.surface import load_surf_data
+from nilearn.surface import load_surf_data, load_surf_mesh
+from sklearn.neighbors import NearestNeighbors
 from surfplot import Plot
 
 
@@ -466,9 +467,6 @@ def compute_distances_searchlight(layout, subject, hemi, aud_contrasts,
 
 def make_searchlights(layout, subject, hemi, radius=6.0):
     """Creates a searchlight mask for each cortical vertex on the surface."""
-
-    from nilearn.surface import load_surf_mesh
-    from sklearn.neighbors import NearestNeighbors
 
     inflated_files = layout.get('filename', subject=subject, hemi=hemi,
                                 suffix='inflated', extension='surf.gii')
