@@ -73,6 +73,7 @@ def main():
         t_maps = []
         roi_maps = []
         froi_maps = []
+        distance_maps = {}
         for hemi in ['L', 'R']:
 
             aud_contrasts, vis_contrasts = \
@@ -105,6 +106,11 @@ def main():
                                             vis_contrasts, roi_map=None)
             distance_dfs.append(distance_df)
 
+            distance_map_hemi = \
+                compute_distances_searchlight(layout, subject, hemi,
+                                              aud_contrasts, vis_contrasts)
+            distance_maps[hemi] = distance_map_hemi
+
             stability_df = compute_pattern_stability(layout, subject, task,
                                                      hemi, space, fd_threshold,
                                                      hrf_model, roi_map)
@@ -122,6 +128,18 @@ def main():
         plot_filename = f'sub-{subject}_task-{task}_space-{space}_desc-aud-pseudo-minus-noise-psts_plot.png'
         plot_file = output_sub_dir / plot_filename
         plt.savefig(plot_file, dpi=200, bbox_inches='tight')
+
+        sessions = aud_contrasts.keys()
+        for session in sessions:
+            distance_map = np.concatenate([distance_maps['L'][session],
+                                           distance_maps['R'][session]])
+            _ = make_surfplot(layout, subject, distance_map,
+                              cbar_label='Correlation distance',
+                              vmin=-1.0, vmax=1.0)
+
+            plot_filename = f'sub-{subject}_ses-{session}_task-{task}_space-{space}_aud-vis-correlation_plot.png'
+            plot_file = output_sub_dir / plot_filename
+            plt.savefig(plot_file, dpi=200, bbox_inches='tight')
 
     output_group_dir = output_dir / 'nilearn/sub-group'
     output_group_dir.mkdir(exist_ok=True, parents=True)
@@ -422,6 +440,47 @@ def compute_distances(subject, hemi, aud_contrasts, vis_contrasts,
                          'session': [f'ses-{ses}' for ses in sessions],
                          'hemi': hemi,
                          'similarity': corrs})
+
+
+def compute_distances_searchlight(layout, subject, hemi, aud_contrasts,
+                                  vis_contrasts, radius=6.0):
+    """Compute correlation between condition betas in each searchlight."""
+
+    searchlight_maps = make_searchlights(layout, subject, hemi, radius)
+
+    corr_maps = {}
+    for session, aud_contrast, vis_contrast in zip(aud_contrasts.keys(),
+                                                   aud_contrasts.values(),
+                                                   vis_contrasts.values()):
+
+        corr_map = np.zeros_like(aud_contrast.effect[0])
+        for ix, searchlight_map in enumerate(searchlight_maps):
+            aud_betas = aud_contrast.effect[0][searchlight_map]
+            vis_betas = vis_contrast.effect[0][searchlight_map]
+            corr_map[ix] = np.corrcoef(aud_betas, vis_betas)[0, 1]
+
+        corr_maps[session] = corr_map
+
+    return corr_maps
+
+
+def make_searchlights(layout, subject, hemi, radius=6.0):
+    """Creates a searchlight mask for each cortical vertex on the surface."""
+
+    from nilearn.surface import load_surf_mesh
+    from sklearn.neighbors import NearestNeighbors
+
+    inflated_files = layout.get('filename', subject=subject, hemi=hemi,
+                                suffix='inflated', extension='surf.gii')
+    assert len(inflated_files) == 1, \
+        'There must be exactly one inflated surface file'
+    inflated_file = inflated_files[0]
+
+    # From https://nilearn.github.io/dev/auto_examples/02_decoding/plot_haxby_searchlight_surface.html#surface-bold-response
+    coords, _ = load_surf_mesh(inflated_file)
+    nn = NearestNeighbors(radius=radius)
+
+    return nn.fit(coords).radius_neighbors_graph(coords).tolil().rows
 
 
 def compute_pattern_stability(layout, subject, task, hemi, space, fd_threshold,
