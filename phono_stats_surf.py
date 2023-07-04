@@ -269,15 +269,15 @@ def get_confounds(layout, subject, session, task, fd_threshold):
 
 
 def compute_psc_contrast(labels, estimates, design_matrix,
-                         conditions_plus, conditions_minus):
+                         conditions_plus=None, conditions_minus=None):
     """Computes a GLM-based contrast with betas in units of percent signal change."""
 
     contrast_values = np.zeros(design_matrix.shape[1])
 
     for col_ix, column in enumerate(design_matrix.columns):
-        if column in conditions_plus:
+        if conditions_plus is not None and column in conditions_plus:
             contrast_values[col_ix] = 1.0 / len(conditions_plus)
-        if column in conditions_minus:
+        if conditions_minus is not None and column in conditions_minus:
             contrast_values[col_ix] = -1.0 / len(conditions_minus)
 
     return compute_contrast(labels, estimates, contrast_values)
@@ -501,22 +501,10 @@ def compute_pattern_stability(layout, subject, task, hemi, space, fd_threshold,
                                                        hrf_model,
                                                        use_single_trials=True)
 
-        design_cols = design_matrix.columns.str
         for condition in conditions:
-
-            trial_ixs = np.where(design_cols.startswith(condition))[0]
-            trial_pairs = list(combinations(trial_ixs, 2))
-
-            n_pairs = len(trial_pairs)
-            print(f'Correlating {n_pairs} pairs of trials for "{condition}"')
-
-            condition_corrs = []
-            for ixs in trial_pairs:
-                corr = correlate_trials(design_matrix, ixs,
-                                        labels, estimates, roi_map)
-                condition_corrs.append(corr)
-
-            corrs[condition][session] = np.mean(condition_corrs)
+            corrs[condition][session] = correlate_trials(condition,
+                                                         design_matrix, labels,
+                                                         estimates, roi_map)
 
     df = pd.DataFrame(corrs)
     df = df.reset_index(names='session')
@@ -528,23 +516,23 @@ def compute_pattern_stability(layout, subject, task, hemi, space, fd_threshold,
                    var_name='condition', value_name='stability')
 
 
-def correlate_trials(design_matrix, ixs, labels, estimates, roi_map=None):
-    """Computes the whole-brain or ROI pattern correlation between a pair of
-    trials in the design matrix."""
+def correlate_trials(
+        condition, design_matrix, labels, estimates, roi_map=None):
+    """Compute pattern stability (mean pairwise correlation) for a one condition."""
 
-    effect_maps = []
-    for ix in ixs:
+    design_cols = design_matrix.columns
+    trial_cols = design_cols[design_cols.str.startswith(condition)]
+    trial_maps = [
+        compute_psc_contrast(labels, estimates, design_matrix, col).effect[0]
+        for col in trial_cols]
 
-        con_val = np.zeros(design_matrix.shape[1])
-        con_val[ix] = 1.0
-        contrast = compute_contrast(labels, estimates, con_val)
+    if roi_map is not None:
+        trial_maps = [map[roi_map.astype(bool)] for map in trial_maps]
 
-        effect_map = contrast.effect[0]
-        if roi_map is not None:
-            effect_map = effect_map[roi_map.astype(bool)]
-        effect_maps.append(effect_map)
+    pairs = combinations(trial_maps, 2)
+    pairs_corrs = [np.corrcoef(pair)[0, 1] for pair in pairs]
 
-    return np.corrcoef(*effect_maps)[0, 1]
+    return np.mean(pairs_corrs)
 
 
 def save_df(df, output_dir, subject, task, space, desc):
