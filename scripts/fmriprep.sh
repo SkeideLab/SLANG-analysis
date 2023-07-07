@@ -47,7 +47,7 @@ cp "$license_file" "$job_license_file"
 # Make sure that fMRIPrep finds pre-downloaded templates
 templateflow_dir="$job_dir/$deriv_name/templateflow"
 datalad get --dataset "$deriv_name" "$templateflow_dir"
-export SINGULARITYENV_TEMPLATEFLOW_HOME="$templateflow_dir"
+export APPTAINERENV_TEMPLATEFLOW_HOME="$templateflow_dir"
 
 # Make sure previous fmriprep data from this subject is available
 fmriprep_dir="$job_dir/$deriv_name/fmriprep"

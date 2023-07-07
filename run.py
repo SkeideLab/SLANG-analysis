@@ -51,7 +51,7 @@ with open(code_dir / 'run_params.json', 'r') as fp:
 code_dir_name = Path(__file__).parent.name
 containers_path = code_dir_name + '/containers/images/'
 containers_dict = {
-    'fmriprep': containers_path + 'bids/bids-fmriprep--21.0.2.sing'}
+    'fmriprep': containers_path + 'bids/bids-fmriprep--23.0.2.sing'}
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
