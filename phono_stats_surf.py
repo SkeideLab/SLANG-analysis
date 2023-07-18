@@ -25,6 +25,7 @@ Analysis steps / goals:
 """
 
 from itertools import combinations
+from os import chdir, getcwd
 from pathlib import Path
 
 import cmcrameri.cm as cmc
@@ -33,6 +34,7 @@ import numpy as np
 import pandas as pd
 from bids import BIDSLayout, BIDSLayoutIndexer
 from datalad.api import Dataset
+from datalad_container.containers_run import ContainersRun
 from mne.datasets import fetch_fsaverage
 from nilearn.glm.contrasts import (_compute_fixed_effects_params,
                                    compute_contrast)
@@ -306,9 +308,8 @@ def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, hemi,
                          roi_ixs):
     """Creates a ROI map for one or more Glasser ROIs in fsnative space."""
 
-    derivatives_dataset = Dataset(derivatives_dir)
     freesurfer_hemi = 'lh' if hemi == 'L' else 'rh'
-    atlas_file = surf_to_surf(derivatives_dataset, freesurfer_dir,
+    atlas_file = surf_to_surf(derivatives_dir, freesurfer_dir,
                               freesurfer_hemi, source_subject='fsaverage',
                               target_subject=f'sub-{subject}',
                               sval_filename='HCPMMP1.annot')
@@ -323,14 +324,16 @@ def make_glasser_roi_map(derivatives_dir, freesurfer_dir, subject, hemi,
     return np.sum([atlas_map == roi_ix for roi_ix in roi_ixs], axis=0)
 
 
-def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
+def surf_to_surf(derivatives_dir, freesurfer_dir, freesurfer_hemi,
                  source_subject, target_subject, sval_filename,
                  tval_filename=None):
     """Uses the FreeSurfer container to convert surface data between different
     subjects; e.g., to convert a parcellation (`.annot`) defined in fsaverage
     space to the fsnative space of a single subject."""
 
-    freesurfer_dir = Path(freesurfer_dir)
+    freesurfer_rel_dir = Path(freesurfer_dir).relative_to(derivatives_dir)
+    freesurfer_target_dir = freesurfer_rel_dir / target_subject
+    freesurfer_source_dir = freesurfer_rel_dir / source_subject
 
     if Path(sval_filename).suffix == '.annot':
         sval_flag = ['--sval-annot', sval_filename]
@@ -340,11 +343,8 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
     if tval_filename is None:
         tval_filename = sval_filename
 
-    input_file = freesurfer_dir / \
-        f'{source_subject}/label/{freesurfer_hemi}.{sval_filename}'
-    output_file = freesurfer_dir / \
-        f'{target_subject}/label/{freesurfer_hemi}.{sval_filename}'
-
+    output_file = freesurfer_target_dir / \
+        f'label/{freesurfer_hemi}.{sval_filename}'
     if not output_file.exists():
 
         cmd = ['mri_surf2surf',
@@ -353,7 +353,7 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
                '--hemi', freesurfer_hemi,
                *sval_flag,
                '--tval', sval_filename,
-               '--sd', freesurfer_dir]
+               '--sd', freesurfer_rel_dir]
         cmd = ' '.join([str(elem) for elem in cmd])
         cmd = f'-c \'{cmd}\''  # See https://stackoverflow.com/a/62313159
 
@@ -361,11 +361,18 @@ def surf_to_surf(derivatives_dataset, freesurfer_dir, freesurfer_hemi,
         # from os import environ
         # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
 
-        derivatives_dataset.containers_run(
-            cmd, container_name='code/containers/neurodesk-freesurfer',
-            inputs=[str(input_file)], outputs=[str(output_file)],
-            message=f'Convert surface annotations from {source_subject} to {target_subject}',
-            explicit=True)
+        current_dir = getcwd()
+        chdir(derivatives_dataset.path)
+
+        cr = ContainersRun()
+        container_name = 'code/containers/neurodesk-freesurfer'
+        inputs = [str(freesurfer_source_dir), str(freesurfer_target_dir)]
+        outputs = [str(output_file)]
+        cr(cmd, container_name, inputs=inputs, outputs=outputs,
+           message=f'Convert surface annotations from {source_subject} to {target_subject}',
+           explicit=True)
+
+        chdir(current_dir)
 
     else:
         print(f'Output surface file "{output_file}" exists, nothing to do')
