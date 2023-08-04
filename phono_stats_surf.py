@@ -76,6 +76,7 @@ def main():
     perc_top_vertices = 0.25
 
     derivatives_dir = Path(__file__).parent.parent
+    derivatives_dir = Path('/ptmp/aenge/slang/data/derivatives')
     bids_dir = derivatives_dir.parent
     fmriprep_dir = derivatives_dir / 'fmriprep'
     freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
@@ -92,7 +93,7 @@ def main():
     psc_dfs = []
     distance_dfs = []
     stability_dfs = []
-    for subject in ['SA15']:  # layout.get_subjects(desc='preproc'):
+    for subject in sorted(layout.get_subjects(desc='preproc')):
 
         print(f'\nPrecessing subject sub-{subject}\n')
 
@@ -149,7 +150,7 @@ def main():
                           cbar_label='Spoken pseudowords\nminus noise ($t$)',
                           vmin=-11.0, vmax=11.0)
 
-        output_sub_dir = output_dir / f'nilearn/sub-{subject}'
+        output_sub_dir = output_dir / f'sub-{subject}'
         output_sub_dir.mkdir(exist_ok=True, parents=True)
         plot_filename = f'sub-{subject}_task-{task}_space-{space}_desc-aud-pseudo-minus-noise-psts_plot.png'
         plot_file = output_sub_dir / plot_filename
@@ -167,7 +168,7 @@ def main():
             plot_file = output_sub_dir / plot_filename
             plt.savefig(plot_file, dpi=200, bbox_inches='tight')
 
-    output_group_dir = output_dir / 'nilearn/sub-group'
+    output_group_dir = output_dir / 'sub-group'
     output_group_dir.mkdir(exist_ok=True, parents=True)
 
     psc_df = pd.concat(psc_dfs)
@@ -420,7 +421,7 @@ def make_froi_map(t_map, roi_map, perc_top_vertices):
 
 def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
                   roi_map_2=None, add_curv=True, views='lateral',
-                  size=(1000, 300), zoom=2.0, cmap=cmc.managua_r,
+                  size=(1000, 300), zoom=1.8, cmap=cmc.managua_r,
                   cbar_label=None, vmin=-2.0, vmax=2.0):
     """Plots a statistical and/or ROI map(s) on the inflated FreeSurfer surface."""
 
@@ -434,19 +435,18 @@ def make_surfplot(layout, subject, stat_map=None, roi_map_1=None,
                                        extension='curv'))
         curv_map = np.concatenate([load_surf_data(f) for f in curv_files])
         curv_map_sign = np.sign(curv_map)
-        _ = plot.add_layer(curv_map_sign, cmap='Greys',
-                           color_range=[-8.0, 4.0], cbar=False)
+        plot.add_layer(curv_map_sign, cmap='Greys',
+                       color_range=[-8.0, 4.0], cbar=False)
 
     if stat_map is not None:
-        _ = plot.add_layer(stat_map, cmap=cmap, color_range=[vmin, vmax],
-                           cbar=True, cbar_label=cbar_label)
+        plot.add_layer(stat_map, cmap=cmap, color_range=[vmin, vmax],
+                       cbar=True, cbar_label=cbar_label)
 
     if roi_map_1 is not None:
-        _ = plot.add_layer(roi_map_1, cmap='Greys_r',
-                           as_outline=True, cbar=False)
+        plot.add_layer(roi_map_1, cmap='Greys_r', as_outline=True, cbar=False)
 
     if roi_map_2 is not None:
-        _ = plot.add_layer(roi_map_2, cmap='brg', as_outline=True, cbar=False)
+        plot.add_layer(roi_map_2, cmap='brg', as_outline=True, cbar=False)
 
     return plot.build()
 
