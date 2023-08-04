@@ -47,6 +47,7 @@ Analysis steps / goals:
 from itertools import combinations
 from os import chdir, getcwd
 from pathlib import Path
+from warnings import warn
 
 import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
@@ -246,10 +247,12 @@ def compute_glm(layout, subject, session, task, hemi, space, fd_threshold,
     design_matrix = design_matrix.iloc[sample_mask]
     condition_cols = set(design_matrix.columns) - set(confounds.columns)
     for col in condition_cols:
-        if design_matrix[col].sum() == 0.0:  # Remove trial regressor if scrubbed
+        col_max = design_matrix[col].max()
+        if col_max <= 0.0:  # Remove trial regressor if scrubbed
+            warn(f'Removing regressor \'{col}\' because it was scrubbed')
             design_matrix = design_matrix.drop(col, axis=1)
         else:
-            scale_factor = 1.0 / max(design_matrix[col])  # Scaling for PSC
+            scale_factor = 1.0 / col_max  # Scaling for PSC
             design_matrix[col] = design_matrix[col] * scale_factor
 
     mean_texture = texture.mean(axis=0)
