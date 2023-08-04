@@ -53,7 +53,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from bids import BIDSLayout, BIDSLayoutIndexer
-from datalad.api import Dataset
 from datalad_container.containers_run import ContainersRun
 from mne.datasets import fetch_fsaverage
 from nilearn.glm.contrasts import (_compute_fixed_effects_params,
@@ -349,8 +348,6 @@ def surf_to_surf(derivatives_dir, freesurfer_dir, freesurfer_hemi,
     space to the fsnative space of a single subject."""
 
     freesurfer_rel_dir = Path(freesurfer_dir).relative_to(derivatives_dir)
-    freesurfer_target_dir = freesurfer_rel_dir / target_subject
-    freesurfer_source_dir = freesurfer_rel_dir / source_subject
 
     if Path(sval_filename).suffix == '.annot':
         sval_flag = ['--sval-annot', sval_filename]
@@ -360,9 +357,12 @@ def surf_to_surf(derivatives_dir, freesurfer_dir, freesurfer_hemi,
     if tval_filename is None:
         tval_filename = sval_filename
 
-    output_file = freesurfer_target_dir / \
+    output_file = freesurfer_dir / target_subject / \
         f'label/{freesurfer_hemi}.{sval_filename}'
     if not output_file.exists():
+
+        output_rel_file = freesurfer_rel_dir / target_subject / \
+            f'label/{freesurfer_hemi}.{tval_filename}'
 
         cmd = ['mri_surf2surf',
                '--srcsubject', source_subject,
@@ -379,12 +379,13 @@ def surf_to_surf(derivatives_dir, freesurfer_dir, freesurfer_hemi,
         # environ['REPRONIM_USE_DOCKER'] = 'TRUE'
 
         current_dir = getcwd()
-        chdir(derivatives_dataset.path)
+        chdir(derivatives_dir)
 
         cr = ContainersRun()
         container_name = 'code/containers/neurodesk-freesurfer'
-        inputs = [str(freesurfer_source_dir), str(freesurfer_target_dir)]
-        outputs = [str(output_file)]
+        inputs = [str(freesurfer_rel_dir / source_subject),
+                  str(freesurfer_rel_dir / target_subject)]
+        outputs = [str(output_rel_file)]
         cr(cmd, container_name, inputs=inputs, outputs=outputs,
            message=f'Convert surface annotations from {source_subject} to {target_subject}',
            explicit=True)
