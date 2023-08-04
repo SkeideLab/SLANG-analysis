@@ -63,7 +63,6 @@ from nilearn.interfaces.fmriprep import load_confounds
 from nilearn.surface import load_surf_data, load_surf_mesh
 from sklearn.neighbors import NearestNeighbors
 from surfplot import Plot
-from xvfbwrapper import Xvfb
 
 
 def main():
@@ -89,9 +88,6 @@ def main():
                         database_path=pybids_dir)
 
     fsaverage_dir = fetch_fsaverage(freesurfer_dir)
-
-    vdisplay = Xvfb()
-    vdisplay.start()
 
     psc_dfs = []
     distance_dfs = []
@@ -185,8 +181,6 @@ def main():
     stability_df = pd.concat(stability_dfs)
     save_df(stability_df, output_group_dir, subject='group', task=task,
             space=space, desc='pattern-stability-psts')
-
-    vdisplay.stop()
 
 
 def compute_session_contrasts(layout, subject, task, hemi, space, fd_threshold,
