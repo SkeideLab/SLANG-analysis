@@ -82,8 +82,11 @@ def main():
     freesurfer_dir = fmriprep_dir / 'sourcedata/freesurfer'
     output_dir = derivatives_dir / 'nilearn'
 
+    pybids_dir = derivatives_dir / 'pybids'
+    pybids_dir.mkdir(exist_ok=True)
     indexer = BIDSLayoutIndexer(force_index=str(freesurfer_dir))
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir], indexer=indexer)
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir], indexer=indexer,
+                        database_path=pybids_dir)
 
     fsaverage_dir = fetch_fsaverage(freesurfer_dir)
 
