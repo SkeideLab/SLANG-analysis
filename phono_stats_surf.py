@@ -1,3 +1,23 @@
+#!/u/aenge/conda-envs/slang-vtk/bin/python3
+# Standard output and error:
+#SBATCH -o /ptmp/aenge/slang/data/derivatives/code/logs/phono_stats_surf.%j
+#SBATCH -e /ptmp/aenge/slang/data/derivatives/code/logs/phono_stats_surf.%j
+# Initial working directory:
+#SBATCH -D /ptmp/aenge/slang/data/derivatives/code
+# Job Name:
+#SBATCH -J phono_stats_surf
+#
+# Number of nodes and MPI tasks per node:
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=40
+#
+# Memory per node:
+#SBATCH --mem 185G
+#
+# Wall clock limit:
+#SBATCH --time=24:00:00
+
 """Influence of learning to read on multi-modal language regions (pSTS).
 
 Using univariate (GLM) and multivariate (pattern stability) analysis on the
