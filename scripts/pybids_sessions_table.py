@@ -14,7 +14,7 @@ sessions = layout.get_collections(task=task, level='session', types='scans',
                                   merge=True)
 sessions_df = sessions.to_df()
 
-output_filename = f'task-{task}_sessions.csv'
+output_filename = f'task-{task}_sessions.tsv'
 output_file = output_dir / output_filename
 output_dir.mkdir(exist_ok=True, parents=True)
-sessions_df.to_csv(output_file, index=False)
+sessions_df.to_csv(output_file, sep='\t', index=False)
