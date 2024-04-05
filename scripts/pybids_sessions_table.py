@@ -25,6 +25,7 @@ layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir)
 sessions = layout.get_collections(task=task, level='session', types='scans',
                                   merge=True)
 sessions_df = sessions.to_df()
+sessions_df = sessions_df.sort_values(['subject', 'session'])
 
 confounds_files = sorted(list(layout.get('filename', task=task,
                                          desc='confounds', suffix='timeseries',
