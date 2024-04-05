@@ -18,6 +18,15 @@ def get_fd_num(confounds_file, fd_thresh):
     return fd_num
 
 
+def get_fd_mean(confounds_file):
+
+    confounds = pd.read_csv(confounds_file, sep='\t')
+    fd = confounds['framewise_displacement']
+    fd_mean = fd.mean()
+
+    return fd_mean
+
+
 bids_dir = derivatives_dir.parent
 fmriprep_dir = derivatives_dir / 'fmriprep'
 layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir)
@@ -32,6 +41,9 @@ confounds_files = sorted(list(layout.get('filename', task=task,
                                          extension='tsv')))
 assert len(confounds_files) == len(sessions_df)
 
+sessions_df['fd_mean'] = [get_fd_mean(confounds_file)
+                          for confounds_file in confounds_files]
+
 for fd_thresh in fd_threshs:
     fd_nums = [get_fd_num(confounds_file, fd_thresh)
                for confounds_file in confounds_files]
@@ -41,4 +53,4 @@ for fd_thresh in fd_threshs:
 output_filename = f'task-{task}_sessions.tsv'
 output_file = output_dir / output_filename
 output_dir.mkdir(exist_ok=True, parents=True)
-sessions_df.to_csv(output_file, sep='\t', index=False)
+sessions_df.to_csv(output_file, sep='\t', index=False, float_format='%.5f')
