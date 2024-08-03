@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 
 # Fail whenever something is fishy; use -x to get verbose logfiles
 set -e -u -x
@@ -14,6 +14,10 @@ output_spaces=("$@")
 
 # Load Singularity for running containerized commands
 module load singularity
+
+# Activate conda environment
+module load anaconda/3/2023.03
+conda activate slang
 
 # Create temporary location
 tmp_dir="/ptmp/$USER/tmp"

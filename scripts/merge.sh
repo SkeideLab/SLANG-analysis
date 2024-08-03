@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 
 # Fail whenever something is fishy; use -x to get verbose logfiles
 set -e -u -x
@@ -9,6 +9,10 @@ pipeline_dir=$2
 pipeline_description=$3
 shift 3
 merge_job_ids=("$@")
+
+# Activate conda environment
+module load anaconda/3/2023.03
+conda activate slang
 
 # Go into the dataset directory
 cd "$deriv_dir"
