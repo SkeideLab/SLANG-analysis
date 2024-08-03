@@ -12,8 +12,8 @@ fd_thres=$5
 shift 5
 output_spaces=("$@")
 
-# Load Singularity for running containerized commands
-module load singularity
+# Load Apptainer for running containerized commands
+module load apptainer
 
 # Create temporary location
 tmp_dir="/ptmp/$USER/tmp"
