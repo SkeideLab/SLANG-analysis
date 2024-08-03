@@ -28,6 +28,7 @@ from scripts.helpers import get_ria_remote, get_templates, submit_job
 # %%
 code_dir = Path(__file__).parent.resolve()
 log_dir = code_dir / 'logs'
+script_dir = code_dir / 'scripts'
 
 deriv_dir = code_dir.parent
 deriv_ds = Dataset(deriv_dir)
@@ -48,10 +49,9 @@ with open(code_dir / 'run_params.json', 'r') as fp:
 # [ReproNim containers subdataset][3].
 
 # %%
-code_dir_name = Path(__file__).parent.name
-containers_path = code_dir_name + '/containers/images/'
+containers_prefix = f'{code_dir.name}/containers/images'
 containers_dict = {
-    'fmriprep': containers_path + 'bids/bids-fmriprep--23.0.2.sing'}
+    'fmriprep': f'{containers_prefix}/bids/bids-fmriprep--24.0.1.sing'}
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
@@ -94,8 +94,8 @@ get_templates(output_spaces, bids_ds, deriv_name)
 ria_dir = bids_dir / '.outputstore'
 remote = get_ria_remote(deriv_ds, ria_dir)
 
-_ = deriv_ds.push(to='output')
-_ = deriv_ds.push(to='output-storage')
+# _ = deriv_ds.push(to='output')
+# _ = deriv_ds.push(to='output-storage')
 # _ = Repo(remote).git.gc() # Takes a couple of minutes, usually not necessary
 
 # %% [markdown]
@@ -106,12 +106,9 @@ _ = deriv_ds.push(to='output-storage')
 # can overwrite the `participants` variable with a cusomt list of subjects.
 
 # %%
-participant_session_dirs = sorted(list(bids_dir.glob('sub-*/ses-*/')))
-participants_sessions = [(d.parent.name.replace('sub-', ''),
-                          d.name.replace('ses-', ''))
-                         for d in participant_session_dirs]
-# participants_sessions = [('SA31', '01')]  # Custom selection for debugging
-participants = [p_s[0] for p_s in participants_sessions]
+participant_dirs = list(bids_dir.glob('sub-*/'))
+participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
+# participants = ['SA27']  # Custom selection for debugging
 
 # %% [markdown]
 # ## Run fMRIPrep
@@ -124,7 +121,7 @@ participants = [p_s[0] for p_s in participants_sessions]
 # this script).
 
 # %%
-script = code_dir / 'scripts/fmriprep.sh'
+script = script_dir / 'fmriprep.sh'
 license_file = run_params['license_file']
 fd_thres = run_params['fd_thres']
 job_ids = []
@@ -144,7 +141,7 @@ for participant in participants:
 # participant-specific jobs from the last step having finished.
 
 # %%
-script = code_dir / 'scripts/merge.sh'
+script = script_dir / 'merge.sh'
 pipeline_dir = deriv_dir / 'fmriprep'
 pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
