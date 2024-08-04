@@ -66,7 +66,7 @@ work_dir="$tmp_dir/work_job_$SLURM_JOB_ID"
 # Note that the `--longitudinal` flag also works for cross-sectional
 # processing (it only takes effect with > 3 anatomical image sessions)
 datalad containers-run \
-  --container-name "$deriv_name/code/containers/bids-fmriprep" \
+  --container-name "bids-fmriprep" \
   --dataset "$job_dir" \
   --input "$job_dir/sub-$participant" \
   --input "$job_dir/dataset_description.json" \
