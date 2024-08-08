@@ -51,7 +51,7 @@ with open(code_dir / 'run_params.json', 'r') as fp:
 # %%
 containers_prefix = f'{code_dir.name}/containers/images'
 containers_dict = {
-    'fmriprep': f'{containers_prefix}/bids/bids-fmriprep--23.1.4.sing'}
+    'fmriprep': f'{containers_prefix}/bids/bids-fmriprep--24.0.1.sing'}
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
