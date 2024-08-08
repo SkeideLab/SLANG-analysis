@@ -17,7 +17,7 @@ module load apptainer
 
 # Activate conda environment
 module load anaconda/3/2023.03
-conda activate slang
+conda activate SLANG
 
 # Create temporary location
 tmp_dir="/ptmp/$USER/tmp"
