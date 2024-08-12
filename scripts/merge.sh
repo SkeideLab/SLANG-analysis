@@ -20,7 +20,7 @@ cd "$deriv_dir"
 # Create empty strings
 local_branches=""
 remote_branches=""
-unsucessful_jobs=""
+unsuccessful_jobs=""
 
 # Check which jobs finished succesfully
 for job_id in "${merge_job_ids[@]}"; do
@@ -29,7 +29,7 @@ for job_id in "${merge_job_ids[@]}"; do
         local_branches+=" output/job-$job_id"
         remote_branches+=" job-$job_id"
     else
-        unsucessful_jobs+=" $job_id"
+        unsuccessful_jobs+=" $job_id"
     fi
 done
 
@@ -73,9 +73,9 @@ if [ -n "$local_branches" ]; then
 
 fi
 
-# Warn about unsucessful branches
-if [ -n "$unsucessful_jobs" ]; then
-    echo "WARNING: Not merging unsuccessful batch jobs $unsucessful_jobs." \
+# Warn about unsuccessful branches
+if [ -n "$unsuccessful_jobs" ]; then
+    echo "WARNING: Not merging unsuccessful batch jobs $unsuccessful_jobs." \
         "Please check their log files and Dataset clones."
 fi
 
