@@ -73,7 +73,6 @@ datalad containers-run \
   --output "$fmriprep_dir/sub-${participant}" \
   --output "$fmriprep_dir/sourcedata/freesurfer/sub-${participant}" \
   --output "$fmriprep_dir/.bidsignore" \
-  --output "$fmriprep_dir/dataset_description.json" \
   --output "$fmriprep_dir/desc-aparcaseg_dseg.tsv" \
   --output "$fmriprep_dir/desc-aseg_dseg.tsv" \
   --output "$fmriprep_dir/sub-${participant}.html" \
