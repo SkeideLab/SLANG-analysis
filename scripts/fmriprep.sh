@@ -75,7 +75,7 @@ datalad containers-run \
   --output "$fmriprep_dir/.bidsignore" \
   --output "$fmriprep_dir/desc-aparcaseg_dseg.tsv" \
   --output "$fmriprep_dir/desc-aseg_dseg.tsv" \
-  --output "$fmriprep_dir/sub-${participant}.html" \
+  --output "$fmriprep_dir/sub-${participant}*.html" \
   --message "Preprocess functional data" \
   --explicit "\
 $job_dir $fmriprep_dir participant \
