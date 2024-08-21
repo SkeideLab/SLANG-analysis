@@ -1,5 +1,4 @@
 from functools import partial
-from os import environ
 from pathlib import Path
 from subprocess import PIPE, run
 
@@ -11,22 +10,22 @@ from joblib import Parallel, delayed
 from juliacall import Main as jl
 from nilearn.glm.first_level import (FirstLevelModel,
                                      make_first_level_design_matrix)
-from nilearn.image import binarize_img, load_img, mean_img
+from nilearn.image import binarize_img, load_img, math_img, mean_img
 from nilearn.reporting import get_clusters_table
 from scipy.stats import norm
 
 
 def main():
-    """Main function for the full first- and second-/third-level analysis."""
+    """Main function for running the full session- and group-level analysis."""
 
     # Input parameters: File paths
-    bids_dir = Path('/ptmp/aenge/slang/data')
+    bids_dir = Path('/ptmp/aenge/SLANG')
     derivatives_dir = bids_dir / 'derivatives'
     fmriprep_dir = derivatives_dir / 'fmriprep'
     output_dir = derivatives_dir / 'univariate'
 
     # Input parameters: Inclusion/exclusiong criteria
-    fd_thresh = 0.5
+    fd_threshold = 0.5
     df_query = 'subject.str.startswith("SA") & perc_outliers <= 0.25 & n_sessions >= 2'
 
     # Inpupt parameters: First-level GLM
@@ -41,25 +40,20 @@ def main():
         'audios-words': (('audios_words',), ()),
         'audios-words-minus-noise': (('audios_words',), ('audios_noise',)),
         'audios-words-minus-pseudo': (('audios_words',), ('audios_pseudo',)),
-        'images-minus-audios': (('images_noise', 'images_pseudo', 'images_words'),
-                                ('audios_noise', 'audios_pseudo', 'audios_words')),
         'images-noise': (('images_noise',), ()),
         'images-pseudo': (('images_pseudo',), ()),
         'images-pseudo-minus-noise': (('images_pseudo',), ('images_noise',)),
         'images-words': (('images_words',), ()),
         'images-words-minus-noise': (('images_words',), ('images_noise',)),
         'images-words-minus-pseudo': (('images_words',), ('images_pseudo',))}
+    n_jobs = 8
 
     # Input parameters: Cluster correction
     clustsim_sidedness = '2-sided'
     clustsim_nn = 'NN1'  # Must be 'NN1' for Nilearn's `get_clusters_table`
-    clustsim_voxel_thresh = 0.001
-    clustsim_cluster_thresh = 0.05
+    clustsim_voxel_threshold = 0.001
+    clustsim_cluster_threshold = 0.05
     clustsim_iter = 10000
-
-    # Input parameters: Performance
-    # n_jobs = int(environ['SLURM_CPUS_PER_TASK'])
-    n_jobs = 8  # When running outside of SLURM
 
     # Load BIDS structure
     pybids_dir = output_dir / 'pybids'
@@ -67,13 +61,14 @@ def main():
                         database_path=pybids_dir)
 
     # Fit first-level GLM, separately for each subject and session
-    glms, mask_imgs, percs_outliers = run_glms(bids_dir, fmriprep_dir,
-                                               pybids_dir, task, space,
-                                               fd_thresh, hrf_model,
-                                               smoothing_fwhm, n_jobs)
+    glms, mask_imgs, percs_non_steady, percs_outliers, residuals_files = \
+        run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
+                 hrf_model, smoothing_fwhm, output_dir, n_jobs)
 
     # Load metadata (subjects, sessions, time points) for mixed model
-    df = load_df(layout, task, percs_outliers, df_query)
+    df = load_df(layout, task, percs_non_steady, percs_outliers, df_query)
+    df_file = output_dir / f'task-{task}_space-{space}_desc-metadata.tsv'
+    df.to_csv(df_file, sep='\t', index=False, float_format='%.5f')
     good_ixs = list(df.index)
 
     # Combine brain masks
@@ -81,6 +76,23 @@ def main():
     mask_img, mask_file = combine_save_mask_imgs(mask_imgs, output_dir,
                                                  task, space)
     mask = mask_img.get_fdata().astype(np.int32)
+    voxel_ixs = np.transpose(mask.nonzero())
+
+    # Compute per-subject auto-correlation function (ACF) parameters and
+    # average them for multiple comparison correction later on (see
+    # https://discuss.afni.nimh.nih.gov/t/the-input-file-for-3dfwhmx/2528/2)
+    residuals_files = [residuals_files[ix] for ix in good_ixs]
+    acfs = [compute_acf(residuals_file, mask_file)
+            for residuals_file in residuals_files]
+    acf = np.mean(acfs, axis=0)
+    print(f'ACF parameters (a, b, c): {acf}')
+
+    # Compute FWE-corrected cluster threshold based on ACF parameters
+    cluster_threshold = \
+        compute_cluster_threshold(acf, mask_file, clustsim_sidedness,
+                                  clustsim_nn, clustsim_voxel_threshold,
+                                  clustsim_cluster_threshold, clustsim_iter)
+    print(f'Cluster threshold: {cluster_threshold:.1f} voxels')
 
     # Loop over contrasts
     for contrast_label, (conditions_plus, conditions_minus) in contrasts.items():
@@ -103,58 +115,27 @@ def main():
         formula = 'beta ~ time + time2 + (time + time2 | subject)'
         voxel_ixs = np.transpose(mask.nonzero())
         betas_per_voxel = [betas[:, x, y, z] for x, y, z in voxel_ixs]
-        # # For quick testing: Necessary when using only 1,000 voxels
-        # betas_per_voxel = betas_per_voxel[0:1000]
         dfs = [df.assign(beta=betas) for betas in betas_per_voxel]
         res = fit_mixed_models(formula, dfs)
-        bs, zs, residuals = zip(*res)
+        bs, zs = zip(*res)
         b0, b1, b2 = np.array(bs).T
         z0, z1, z2 = np.array(zs).T
-        residuals = np.array(residuals)
-
-        # # For quick testing: Necessary when using only 1,000 voxels
-        # n_pad = mask.sum() - residuals.shape[0]
-        # residuals = np.pad(residuals, ((0, n_pad), (0, 0)))
-
-        # Save model residuals to NIfTI file
-        n_residuals = residuals.shape[1]
-        residuals_ref = np.repeat(mask[:, :, :, np.newaxis],
-                                  n_residuals, axis=3)
-        residuals_ref_img = nib.Nifti1Image(residuals_ref, mask_img.affine)
-        residuals_img, residuals_file = \
-            save_array_to_nifti(residuals, residuals_ref_img, voxel_ixs,
-                                output_dir, task, space, contrast_label,
-                                suffix='residuals')
-
-        # Compute parametric cluster FWE correction threshold using AFNI
-        print('Computing cluster correction for ' +
-              f'contrast "{contrast_label}"...')
-        acf = compute_acf(residuals_file, mask_file)
-        cluster_threshold = \
-            compute_cluster_threshold(acf, mask_file, clustsim_sidedness,
-                                      clustsim_nn, clustsim_voxel_thresh,
-                                      clustsim_cluster_thresh, clustsim_iter)
-        print(f'Cluster threshold: {cluster_threshold:.1f} voxels')
 
         # Save unthresholded and thresholded statistical images to NIfTI files
         for array, suffix in zip([b0, b1, b2, z0, z1, z2],
                                  ['b0', 'b1', 'b2', 'z0', 'z1', 'z2']):
-
-            # # For quick testing: Necessary when using only 1,000 voxels
-            # n_pad = mask.sum() - array.shape[0]
-            # array = np.pad(array, ((0, n_pad)))
 
             img, file = save_array_to_nifti(array, mask_img, voxel_ixs,
                                             output_dir, task, space,
                                             contrast_label, suffix)
 
             if suffix.startswith('z'):
-                save_clusters(img, clustsim_voxel_thresh, cluster_threshold,
+                save_clusters(img, clustsim_voxel_threshold, cluster_threshold,
                               output_dir, task, space, contrast_label, suffix)
 
 
-def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_thresh,
-             hrf_model, smoothing_fwhm, n_jobs):
+def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
+             hrf_model, smoothing_fwhm, output_dir, n_jobs):
     """Runs first-level GLM for all subjects and sessions."""
 
     layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir,
@@ -163,7 +144,8 @@ def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_thresh,
     subjects_sessions = get_subjects_sessions(layout, task, space)
 
     run_glm_ = partial(run_glm, bids_dir, fmriprep_dir, pybids_dir, task,
-                       space, fd_thresh, hrf_model, smoothing_fwhm)
+                       space, fd_threshold, hrf_model, smoothing_fwhm,
+                       output_dir)
 
     res = Parallel(n_jobs)(delayed(run_glm_)(subject, session)
                            for subject, session in subjects_sessions)
@@ -189,8 +171,8 @@ def get_subjects_sessions(layout, task, space):
     return sorted(subjects_sessions)
 
 
-def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space,
-            fd_thresh, hrf_model, smoothing_fwhm, subject, session):
+def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
+            hrf_model, smoothing_fwhm, output_dir, subject, session):
     """Runs a first-level GLM for a given subject and session."""
 
     layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir,
@@ -204,8 +186,8 @@ def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space,
 
     frame_times = make_frame_times(layout, func_img)
 
-    confounds, perc_outliers = get_confounds(layout, subject, session, task,
-                                             fd_thresh)
+    confounds, perc_non_steady, perc_outliers = \
+        get_confounds(layout, subject, session, task, fd_threshold)
 
     design_matrix = make_first_level_design_matrix(frame_times,
                                                    events=events,
@@ -214,10 +196,23 @@ def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space,
                                                    high_pass=None,
                                                    add_regs=confounds)
 
-    glm = FirstLevelModel(smoothing_fwhm=smoothing_fwhm, mask_img=mask_img)
-    glm.fit(run_imgs=func_img, design_matrices=[design_matrix])
+    glm_small = FirstLevelModel(smoothing_fwhm=smoothing_fwhm,
+                                mask_img=mask_img, minimize_memory=False)
+    glm_small.fit(run_imgs=func_img, design_matrices=[design_matrix])
 
-    return glm, mask_img, perc_outliers
+    glm_big = FirstLevelModel(smoothing_fwhm=smoothing_fwhm, mask_img=mask_img,
+                              minimize_memory=False)
+    glm_big.fit(run_imgs=func_img, design_matrices=[design_matrix])
+
+    residuals_dir = output_dir / f'sub-{subject}' / f'ses-{session}' / 'func'
+    residuals_dir.mkdir(parents=True, exist_ok=True)
+
+    residuals_filename = f'sub-{subject}_ses-{session}_task-{task}_space-{space}_desc-residuals.nii.gz'
+    residuals_file = residuals_dir / residuals_filename
+    residuals = glm_big.residuals[0]
+    residuals.to_filename(residuals_file)
+
+    return glm_small, mask_img, perc_outliers, perc_non_steady, residuals_file
 
 
 def load_mask_img(layout, subject, session, task, space):
@@ -264,7 +259,7 @@ def make_frame_times(layout, func_img):
     return tr * (np.arange(n_scans) + 0.5)
 
 
-def get_confounds(layout, subject, session, task, fd_thresh=0.5):
+def get_confounds(layout, subject, session, task, fd_threshold=0.5):
     """Loads a common set of confounds for a given subject and session.
 
     These are:
@@ -291,11 +286,15 @@ def get_confounds(layout, subject, session, task, fd_thresh=0.5):
 
     non_steady_cols = [col for col in confounds
                        if col.startswith('non_steady_state_outlier')]
+    n_non_steady = len(non_steady_cols)
+    n_volumes = len(confounds)
+    perc_non_steady = n_non_steady / n_volumes
+    print(f'Found {n_non_steady} non-steady-state volumes ' +
+          f'({perc_non_steady * 100:.1f}%) for subject {subject}, session {session}')
 
-    confounds, outlier_cols = add_outlier_regressors(confounds, fd_thresh)
+    confounds, outlier_cols = add_outlier_regressors(confounds, fd_threshold)
 
     n_outliers = len(outlier_cols)
-    n_volumes = len(confounds)
     perc_outliers = n_outliers / n_volumes
     print(f'Found {n_outliers} outliers ({perc_outliers * 100:.1f}%) for ' +
           f'subject {subject}, session {session}')
@@ -303,14 +302,14 @@ def get_confounds(layout, subject, session, task, fd_thresh=0.5):
     cols = hmp_cols + compcor_cols + cosine_cols + non_steady_cols + outlier_cols
     confounds = confounds[cols]
 
-    return confounds, perc_outliers
+    return confounds, perc_non_steady, perc_outliers
 
 
-def add_outlier_regressors(confounds, fd_thresh=0.5):
+def add_outlier_regressors(confounds, fd_threshold=0.5):
     """Adds outlier regressors based on framewise displacement to confounds."""
 
     fd = confounds['framewise_displacement']
-    outlier_ixs = np.where(fd > fd_thresh)[0]
+    outlier_ixs = np.where(fd > fd_threshold)[0]
     outliers = np.zeros((len(fd), len(outlier_ixs)))
     outliers[outlier_ixs, np.arange(len(outlier_ixs))] = 1
     outlier_cols = [f'fd_outlier{i}' for i in range(len(outlier_ixs))]
@@ -320,7 +319,7 @@ def add_outlier_regressors(confounds, fd_thresh=0.5):
     return confounds, outlier_cols
 
 
-def load_df(layout, task, percs_outliers, df_query):
+def load_df(layout, task, percs_outliers, percs_non_steady, df_query):
     """Load the DataFrame with the subject/session metadata for the mixed model."""
 
     df = layout.get_collections(task=task, level='session', types='scans',
@@ -328,6 +327,7 @@ def load_df(layout, task, percs_outliers, df_query):
     df = df.sort_values(['subject', 'session']).reset_index(drop=True)
 
     df['n_sessions'] = df.groupby('subject')['session'].transform('count')
+    df['perc_non_steady'] = percs_non_steady
     df['perc_outliers'] = percs_outliers
     df['acq_time'] = pd.to_datetime(df['acq_time'])
     df['time_diff'] = df['acq_time'] - df['acq_time'].min()
@@ -336,16 +336,18 @@ def load_df(layout, task, percs_outliers, df_query):
 
     df = df.query(df_query)
 
-    return df[['subject', 'session', 'time', 'time2']]
+    return df[['subject', 'session', 'perc_non_steady', 'perc_outliers',
+               'time', 'time2']]
 
 
-def combine_save_mask_imgs(mask_imgs, output_dir, task, space, perc_thresh=0.5):
+def combine_save_mask_imgs(mask_imgs, output_dir, task, space,
+                           perc_threshold=0.5):
     """Combines brain masks across subjects and sessions and saves the result.
 
-    Only voxels that are present in at least `perc_thresh` of all masks are
+    Only voxels that are present in at least `perc_threshold` of all masks are
     included in the final mask."""
 
-    mask_img = combine_mask_imgs(mask_imgs, perc_thresh)
+    mask_img = combine_mask_imgs(mask_imgs, perc_threshold)
 
     mask_file = save_img(mask_img, output_dir, task, space,
                          desc='brain', suffix='mask')
@@ -353,23 +355,78 @@ def combine_save_mask_imgs(mask_imgs, output_dir, task, space, perc_thresh=0.5):
     return mask_img, mask_file
 
 
-def combine_mask_imgs(mask_imgs, perc_thresh=0.5):
+def combine_mask_imgs(mask_imgs, perc_threshold=0.5):
     """Combines brain masks across subjects and sessions.
 
-    Only voxels that are present in at least `perc_thresh` of all masks are
+    Only voxels that are present in at least `perc_threshold` of all masks are
     included in the final mask."""
 
-    return binarize_img(mean_img(mask_imgs), threshold=perc_thresh)
+    return binarize_img(mean_img(mask_imgs), threshold=perc_threshold)
 
 
-def save_img(img, output_dir, task, space, desc, suffix):
+def save_img(img, output_dir, task, space, desc, suffix,
+             subject=None, session=None):
     """Saves a NIfTI image to a file in the output directory."""
 
     filename = f'task-{task}_space-{space}_desc-{desc}_{suffix}.nii.gz'
+
+    if session:
+        filename = f'ses-{session}_{filename}'
+
+    if subject:
+        filename = f'sub-{subject}_{filename}'
+
     file = output_dir / filename
     img.to_filename(file)
 
     return file
+
+
+def compute_acf(residuals_file, mask_file):
+    """Computes parameters of the noise autocorrelation function using AFNI."""
+
+    cmd = ['3dFWHMx',
+           '-mask', mask_file,
+           '-input', residuals_file,
+           '-acf', 'NULL']
+    res = run(cmd, stdout=PIPE, text=True, check=True)
+
+    acf = res.stdout.split()[4:7]  # Select a, b, c parameters of ACF
+
+    return [float(param) for param in acf]
+
+
+def compute_cluster_threshold(acf, mask_file, sidedness, nn, voxel_threshold,
+                              cluster_threshold, iter):
+    """Computes the FWE-corrected cluster size threshold using AFNI."""
+
+    cmd = ['3dClustSim',
+           '-mask', mask_file,
+           '-acf', *[str(param) for param in acf],
+           '-pthr', str(voxel_threshold),
+           '-athr', str(cluster_threshold),
+           '-iter', str(iter)]
+    res = run(cmd, stdout=PIPE, text=True, check=True)
+    cluster_thresholds = parse_clustsim_output(res.stdout)
+
+    return cluster_thresholds[sidedness][nn]
+
+
+def parse_clustsim_output(output):
+    """Parses the output of AFNI's `3dClustSim` command into a dictionary."""
+
+    lines = output.split('\n')
+    ns_voxels = [float(line.split()[-1])
+                 for line in lines
+                 if line and not line.startswith('#')]
+
+    results_dict = {}
+    for sidedness in ['1-sided', '2-sided', 'bi-sided']:
+        results_dict[sidedness] = {}
+        for nn in [1, 2, 3]:
+            results_dict[sidedness][f'NN{nn}'] = ns_voxels.pop(0)
+
+    return results_dict
 
 
 def compute_beta_img(glm, conditions_plus, conditions_minus):
@@ -407,12 +464,11 @@ def save_beta_img(beta_img, output_dir, subject, session, task, space,
 
 
 def fit_mixed_models(formula, dfs):
-    """Fits mixed models for a list of DataFrames using the MixedModels package
-    in Julia."""
+    """Fits mixed models for a list of DataFrames using the `MixedModels`
+    package in Julia."""
 
     model_cmd = f"""
         using MixedModels
-        using StatsBase
         using Suppressor
 
         function fit_mixed_model(df)
@@ -420,8 +476,7 @@ def fit_mixed_models(formula, dfs):
           mod = @suppress fit(MixedModel, fml, df)
           bs = mod.beta
           zs = mod.beta ./ mod.stderror
-          residuals = StatsBase.residuals(mod)
-        return bs, zs, residuals
+        return bs, zs
         end
         
         function fit_mixed_models(dfs)
@@ -433,8 +488,8 @@ def fit_mixed_models(formula, dfs):
 
 
 def save_array_to_nifti(array, ref_img, voxel_ixs, output_dir, task, space,
-                        desc, suffix):
-    """Inserts an array into a NIfTI image and saves it to a file."""
+                        desc, suffix, subject=None, session=None):
+    """Inserts a NumPy array into a NIfTI image and saves it to a file."""
 
     full_array = np.zeros(ref_img.shape)
     full_array[tuple(voxel_ixs.T)] = array
@@ -445,53 +500,9 @@ def save_array_to_nifti(array, ref_img, voxel_ixs, output_dir, task, space,
     return img, img_file
 
 
-def compute_acf(residuals_file, mask_file):
-    """Computes paramters of the noise autocorrelation function using AFNI."""
-
-    cmd = ['3dFWHMx',
-           '-mask', mask_file,
-           '-input', residuals_file,
-           '-acf', 'NULL']
-    res = run(cmd, stdout=PIPE, text=True, check=True)
-
-    return res.stdout.split()[4:7]  # Select a, b, c parameters of ACF
-
-
-def compute_cluster_threshold(acf, mask_file, sidedness, nn, voxel_thresh,
-                              cluster_thresh, iter):
-
-    cmd = ['3dClustSim',
-           '-mask', mask_file,
-           '-acf', *acf,
-           '-pthr', str(voxel_thresh),
-           '-athr', str(cluster_thresh),
-           '-iter', str(iter)]
-    res = run(cmd, stdout=PIPE, text=True, check=True)
-    cluster_thresholds = parse_clustsim_output(res.stdout)
-
-    return cluster_thresholds[sidedness][nn]
-
-
-def parse_clustsim_output(output):
-    """Parses the output of AFNI's 3dClustSim command into a dictionary."""
-
-    lines = output.split('\n')
-    ns_voxels = [float(line.split()[-1])
-                 for line in lines
-                 if line and not line.startswith('#')]
-
-    results_dict = {}
-    for sidedness in ['1-sided', '2-sided', 'bi-sided']:
-        results_dict[sidedness] = {}
-        for nn in [1, 2, 3]:
-            results_dict[sidedness][f'NN{nn}'] = ns_voxels.pop(0)
-
-    return results_dict
-
-
 def save_clusters(img, voxel_threshold, cluster_threshold, output_dir, task,
                   space, contrast_label, suffix):
-    """Saves clusters in a NIfTI image and a table of cluster statistics."""
+    """Finds clusters in a z-map and saves them as a table and NIfTI image."""
 
     voxel_threshold_z = norm.ppf(1 - voxel_threshold / 2)  # p to z
 
@@ -499,31 +510,50 @@ def save_clusters(img, voxel_threshold, cluster_threshold, output_dir, task,
         get_clusters_table(img, voxel_threshold_z, cluster_threshold,
                            two_sided=True, return_label_maps=True)
 
-    if cluster_imgs:
+    has_pos_clusters = any(cluster_df['Peak Stat'] > 0)
+    has_neg_clusters = any(cluster_df['Peak Stat'] < 0)
 
-        save_df(cluster_df, output_dir, task, space, contrast_label,
-                suffix=f'{suffix}-clusters')
+    if has_pos_clusters:
 
-        if len(cluster_imgs) == 1:
+        if has_neg_clusters:
 
-            save_img(cluster_imgs[0], output_dir, task, space, contrast_label,
-                     suffix=f'{suffix}-clusters')
+            neg_ixs = cluster_df['Peak Stat'] < 0
+            cluster_df.loc[neg_ixs, 'Cluster ID'] = \
+                '-' + cluster_df.loc[neg_ixs, 'Cluster ID'].astype(str)
+
+            cluster_img = math_img('img_pos - img_neg',
+                                   img_pos=cluster_imgs[0],
+                                   img_neg=cluster_imgs[1])
 
         else:
 
-            save_img(cluster_imgs[0], output_dir, task, space, contrast_label,
-                     suffix=f'{suffix}-clusters-pos')
+            cluster_img = cluster_imgs[0]
 
-            save_img(cluster_imgs[1], output_dir, task, space, contrast_label,
-                     suffix=f'{suffix}-clusters-neg')
+    elif has_neg_clusters:
+
+        neg_ixs = cluster_df['Peak Stat'] < 0
+        cluster_df.loc[neg_ixs, 'Cluster ID'] = \
+            '-' + cluster_df.loc[neg_ixs, 'Cluster ID'].astype(str)
+
+        cluster_img = math_img('-img', img=cluster_imgs[0])
+
+    else:
+
+        cluster_img = math_img('img - img', img=img)
+
+    save_df(cluster_df, output_dir, task, space, contrast_label,
+            suffix=f'{suffix}-clusters')
+
+    save_img(cluster_img, output_dir, task, space, contrast_label,
+             suffix=f'{suffix}-clusters')
 
 
 def save_df(df, output_dir, task, space, desc, suffix):
-    """Saves a DataFrame with cluster statistics to a TSV file."""
+    """Saves a DataFrame to a TSV file."""
 
     filename = f'task-{task}_space-{space}_desc-{desc}_{suffix}.tsv'
     file = output_dir / filename
-    df.to_csv(file, sep='\t', index=False)
+    df.to_csv(file, sep='\t', index=False, float_format='%.5f')
 
     return file
 
