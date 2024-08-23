@@ -55,6 +55,21 @@ containers_dict = {
 _ = deriv_ds.get(containers_dict.values())
 
 # %% [markdown]
+# ## Install custom container for statistical analysis
+
+# %%
+installed_containers = [elem['name'] for elem in
+                        bids_ds.containers_list(result_renderer='disabled')]
+
+if not 'python-julia-afni' in installed_containers:
+    bind_dir = Path(str(bids_dir).replace('/raven', ''))
+    bids_ds.containers_add(
+        name='python-julia-afni',
+        url='docker://skeidelab/python-julia-afni:0.2',
+        call_fmt=f'singularity exec --bind {bind_dir}:{bind_dir} ' +
+            '--cleanenv {img} {cmd}')
+
+# %% [markdown]
 # ## Download templates
 #
 # Like the software containers, any standard brain templates that are needed
@@ -134,6 +149,13 @@ pipeline_description = 'fMRIPrep'
 args = [script, deriv_dir, pipeline_dir, pipeline_description, *job_ids]
 job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='merge')
+
+# %%
+script = code_dir / 'univariate.sh'
+args = [script, deriv_dir]
+job_id = submit_job(args, cpus=72, mem=512000, dependency_jobs=job_id,
+                    dependency_type='afterok', log_dir=log_dir,
+                    job_name='univariate')
 
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
