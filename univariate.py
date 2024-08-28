@@ -15,66 +15,67 @@ from nilearn.reporting import get_clusters_table
 from scipy.stats import norm
 
 
+# Input parameters: File paths
+BIDS_DIR = Path('/ptmp/aenge/SLANG')
+DERIVATIVES_DIR = BIDS_DIR / 'derivatives'
+FMRIPREP_DIR = DERIVATIVES_DIR / 'fmriprep'
+UNIVARIATE_DIR = DERIVATIVES_DIR / 'univariate'
+
+# Input parameters: Inclusion/exclusiong criteria
+FD_THRESHOLD = 0.5
+DF_QUERY = 'subject.str.startswith("SA") & perc_outliers <= 0.25 & n_sessions >= 2'
+
+# Inpupt parameters: First-level GLM
+TASK = 'language'
+SPACE = 'MNI152NLin2009cAsym'
+SMOOTHING_FWHM = 5.0
+HRF_MODEL = 'glover + derivative + dispersion'
+CONTRASTS = {
+    'audios-noise': (('audios_noise',), ()),
+    'audios-pseudo': (('audios_pseudo',), ()),
+    'audios-pseudo-minus-noise': (('audios_pseudo',), ('audios_noise',)),
+    'audios-words': (('audios_words',), ()),
+    'audios-words-minus-noise': (('audios_words',), ('audios_noise',)),
+    'audios-words-minus-pseudo': (('audios_words',), ('audios_pseudo',)),
+    'images-noise': (('images_noise',), ()),
+    'images-pseudo': (('images_pseudo',), ()),
+    'images-pseudo-minus-noise': (('images_pseudo',), ('images_noise',)),
+    'images-words': (('images_words',), ()),
+    'images-words-minus-noise': (('images_words',), ('images_noise',)),
+    'images-words-minus-pseudo': (('images_words',), ('images_pseudo',))}
+N_JOBS = 8
+
+# Input parameters: Cluster correction
+CLUSTSIM_SIDEDNESS = '2-sided'
+CLUSTSIM_NN = 'NN1'  # Must be 'NN1' for Nilearn's `get_clusters_table`
+CLUSTSIM_VOXEL_THRESHOLD = 0.001
+CLUSTSIM_CLUSTER_THRESHOLD = 0.05
+CLUSTSIM_ITER = 10000
+
+
 def main():
     """Main function for running the full session- and group-level analysis."""
 
-    # Input parameters: File paths
-    bids_dir = Path('/ptmp/aenge/SLANG')
-    derivatives_dir = bids_dir / 'derivatives'
-    fmriprep_dir = derivatives_dir / 'fmriprep'
-    output_dir = derivatives_dir / 'univariate'
-
-    # Input parameters: Inclusion/exclusiong criteria
-    fd_threshold = 0.5
-    df_query = 'subject.str.startswith("SA") & perc_outliers <= 0.25 & n_sessions >= 2'
-
-    # Inpupt parameters: First-level GLM
-    task = 'language'
-    space = 'MNI152NLin2009cAsym'
-    smoothing_fwhm = 5.0
-    hrf_model = 'glover + derivative + dispersion'
-    contrasts = {
-        'audios-noise': (('audios_noise',), ()),
-        'audios-pseudo': (('audios_pseudo',), ()),
-        'audios-pseudo-minus-noise': (('audios_pseudo',), ('audios_noise',)),
-        'audios-words': (('audios_words',), ()),
-        'audios-words-minus-noise': (('audios_words',), ('audios_noise',)),
-        'audios-words-minus-pseudo': (('audios_words',), ('audios_pseudo',)),
-        'images-noise': (('images_noise',), ()),
-        'images-pseudo': (('images_pseudo',), ()),
-        'images-pseudo-minus-noise': (('images_pseudo',), ('images_noise',)),
-        'images-words': (('images_words',), ()),
-        'images-words-minus-noise': (('images_words',), ('images_noise',)),
-        'images-words-minus-pseudo': (('images_words',), ('images_pseudo',))}
-    n_jobs = 8
-
-    # Input parameters: Cluster correction
-    clustsim_sidedness = '2-sided'
-    clustsim_nn = 'NN1'  # Must be 'NN1' for Nilearn's `get_clusters_table`
-    clustsim_voxel_threshold = 0.001
-    clustsim_cluster_threshold = 0.05
-    clustsim_iter = 10000
-
     # Load BIDS structure
-    pybids_dir = output_dir / 'pybids'
-    layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir,
+    pybids_dir = UNIVARIATE_DIR / 'pybids'
+    layout = BIDSLayout(BIDS_DIR, derivatives=FMRIPREP_DIR,
                         database_path=pybids_dir)
 
     # Fit first-level GLM, separately for each subject and session
     glms, mask_imgs, percs_non_steady, percs_outliers, residuals_files = \
-        run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
-                 hrf_model, smoothing_fwhm, output_dir, n_jobs)
+        run_glms(BIDS_DIR, FMRIPREP_DIR, pybids_dir, TASK, SPACE, FD_THRESHOLD,
+                 HRF_MODEL, SMOOTHING_FWHM, UNIVARIATE_DIR, N_JOBS)
 
     # Load metadata (subjects, sessions, time points) for mixed model
-    df = load_df(layout, task, percs_non_steady, percs_outliers, df_query)
-    df_file = output_dir / f'task-{task}_space-{space}_desc-metadata.tsv'
+    df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
+    df_file = UNIVARIATE_DIR / f'task-{TASK}_space-{SPACE}_desc-metadata.tsv'
     df.to_csv(df_file, sep='\t', index=False, float_format='%.5f')
     good_ixs = list(df.index)
 
     # Combine brain masks
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
-    mask_img, mask_file = combine_save_mask_imgs(mask_imgs, output_dir,
-                                                 task, space)
+    mask_img, mask_file = combine_save_mask_imgs(mask_imgs, UNIVARIATE_DIR,
+                                                 TASK, SPACE)
     mask = mask_img.get_fdata().astype(np.int32)
     voxel_ixs = np.transpose(mask.nonzero())
 
@@ -89,13 +90,13 @@ def main():
 
     # Compute FWE-corrected cluster threshold based on ACF parameters
     cluster_threshold = \
-        compute_cluster_threshold(acf, mask_file, clustsim_sidedness,
-                                  clustsim_nn, clustsim_voxel_threshold,
-                                  clustsim_cluster_threshold, clustsim_iter)
+        compute_cluster_threshold(acf, mask_file, CLUSTSIM_SIDEDNESS,
+                                  CLUSTSIM_NN, CLUSTSIM_VOXEL_THRESHOLD,
+                                  CLUSTSIM_CLUSTER_THRESHOLD, CLUSTSIM_ITER)
     print(f'Cluster threshold: {cluster_threshold:.1f} voxels')
 
     # Loop over contrasts
-    for contrast_label, (conditions_plus, conditions_minus) in contrasts.items():
+    for contrast_label, (conditions_plus, conditions_minus) in CONTRASTS.items():
 
         # Compute beta images for each subject and session
         beta_imgs = [compute_beta_img(glm, conditions_plus, conditions_minus)
@@ -107,8 +108,8 @@ def main():
         subjects = df['subject']
         sessions = df['session']
         for beta_img, subject, session in zip(beta_imgs, subjects, sessions):
-            save_beta_img(beta_img, output_dir, subject, session, task,
-                          space, contrast_label)
+            save_beta_img(beta_img, UNIVARIATE_DIR, subject, session, TASK,
+                          SPACE, contrast_label)
 
         # Fit linear group-level linear mixed models using Julia
         print(f'Fitting mixed models for contrast "{contrast_label}"...')
@@ -126,12 +127,12 @@ def main():
                                  ['b0', 'b1', 'b2', 'z0', 'z1', 'z2']):
 
             img, file = save_array_to_nifti(array, mask_img, voxel_ixs,
-                                            output_dir, task, space,
+                                            UNIVARIATE_DIR, TASK, SPACE,
                                             contrast_label, suffix)
 
             if suffix.startswith('z'):
-                save_clusters(img, clustsim_voxel_threshold, cluster_threshold,
-                              output_dir, task, space, contrast_label, suffix)
+                save_clusters(img, CLUSTSIM_VOXEL_THRESHOLD, cluster_threshold,
+                              UNIVARIATE_DIR, TASK, SPACE, contrast_label, suffix)
 
 
 def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
@@ -296,8 +297,8 @@ def get_confounds(layout, subject, session, task, fd_threshold=0.5):
 
     n_outliers = len(outlier_cols)
     perc_outliers = n_outliers / n_volumes
-    print(f'Found {n_outliers} outliers ({perc_outliers * 100:.1f}%) for ' +
-          f'subject {subject}, session {session}')
+    print(f'Found {n_outliers} outlier volumes ({perc_outliers * 100:.1f}%) ' +
+          f'for subject {subject}, session {session}')
 
     cols = hmp_cols + compcor_cols + cosine_cols + non_steady_cols + outlier_cols
     confounds = confounds[cols]
