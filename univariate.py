@@ -14,11 +14,11 @@ from nilearn.image import binarize_img, load_img, math_img, mean_img
 from nilearn.reporting import get_clusters_table
 from scipy.stats import norm
 
-
 # Input parameters: File paths
 BIDS_DIR = Path('/ptmp/aenge/SLANG')
 DERIVATIVES_DIR = BIDS_DIR / 'derivatives'
 FMRIPREP_DIR = DERIVATIVES_DIR / 'fmriprep'
+PYBIDS_DIR = DERIVATIVES_DIR / 'pybids'
 UNIVARIATE_DIR = DERIVATIVES_DIR / 'univariate'
 
 # Input parameters: Inclusion/exclusiong criteria
@@ -57,13 +57,12 @@ def main():
     """Main function for running the full session- and group-level analysis."""
 
     # Load BIDS structure
-    pybids_dir = UNIVARIATE_DIR / 'pybids'
     layout = BIDSLayout(BIDS_DIR, derivatives=FMRIPREP_DIR,
-                        database_path=pybids_dir)
+                        database_path=PYBIDS_DIR)
 
     # Fit first-level GLM, separately for each subject and session
     glms, mask_imgs, percs_non_steady, percs_outliers, residuals_files = \
-        run_glms(BIDS_DIR, FMRIPREP_DIR, pybids_dir, TASK, SPACE, FD_THRESHOLD,
+        run_glms(BIDS_DIR, FMRIPREP_DIR, PYBIDS_DIR, TASK, SPACE, FD_THRESHOLD,
                  HRF_MODEL, SMOOTHING_FWHM, UNIVARIATE_DIR, N_JOBS)
 
     # Load metadata (subjects, sessions, time points) for mixed model
