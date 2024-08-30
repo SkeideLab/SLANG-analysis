@@ -151,11 +151,18 @@ job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
                     log_dir=log_dir, job_name='merge')
 
 # %%
-script = code_dir / 'univariate.sh'
+script = script_dir / 'univariate.sh'
 args = [script, deriv_dir]
 job_id = submit_job(args, cpus=72, mem=512000, dependency_jobs=job_id,
                     dependency_type='afterok', log_dir=log_dir,
                     job_name='univariate')
+
+# %%
+script = script_dir / 'similarity.sh'
+args = [script, deriv_dir]
+job_id = submit_job(args, cpus=8, mem=32000, dependency_jobs=[],
+                    dependency_type='afterok', log_dir=log_dir,
+                    job_name='similarity')
 
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
