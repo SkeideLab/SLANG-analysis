@@ -160,7 +160,7 @@ job_id = submit_job(args, cpus=72, mem=512000, dependency_jobs=job_id,
 # %%
 script = script_dir / 'similarity.sh'
 args = [script, deriv_dir]
-job_id = submit_job(args, cpus=8, mem=32000, dependency_jobs=[],
+job_id = submit_job(args, cpus=72, mem=256000, dependency_jobs=job_id,
                     dependency_type='afterok', log_dir=log_dir,
                     job_name='similarity')
 

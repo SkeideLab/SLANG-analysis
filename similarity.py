@@ -3,9 +3,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from bids import BIDSLayout
+from juliacall import Main as jl
 from nilearn.image import math_img, resample_to_img
 from nilearn.maskers import NiftiMasker
 from nilearn.reporting import get_clusters_table
+from scipy.stats import norm
 from univariate import (BIDS_DIR, CONTRASTS, DERIVATIVES_DIR, DF_QUERY,
                         FD_THRESHOLD, FMRIPREP_DIR, HRF_MODEL, N_JOBS,
                         PYBIDS_DIR, SPACE, TASK, UNIVARIATE_DIR,
@@ -32,11 +34,13 @@ CONTRAST_PAIRS = {
                            ('audios_words', 'audios_pseudo')),
     'pseudo-minus-noise': (('images_pseudo', 'images_noise'),
                            ('audios_pseudo', 'audios_noise'))}
-N_JOBS = 2
 
-# Anatomical regions of interest
+# Inpupt parameters: Anatomical regions of interest
 GLASSER_ROIS = {'pSTS': (128, 129, 130, 176),  # STSda, STSdp, STSvp, STSva
                 'vOT': (7, 18, 163)}  # 8th Visual Area, FFC, Ventral Visual Complex
+
+# Inpupt parameters: Linear mixed models
+FORMULA = 'r ~ time + time2 + (time + time2 | subject)'
 
 
 def main():
@@ -72,6 +76,14 @@ def main():
     df_filename = f'task-{TASK}_space-{SPACE}_desc-correlations.tsv'
     df_file = SIMILARITY_DIR / df_filename
     df.to_csv(df_file, sep='\t', index=False, float_format='%.4f')
+
+    # # Read previously saved data frame
+    # df = pd.read_csv(df_file, sep='\t')
+
+    res_df = run_similarity_stats(df, roi_maskers)
+    res_df_filename = f'task-{TASK}_space-{SPACE}_desc-stats.tsv'
+    res_df_file = SIMILARITY_DIR / res_df_filename
+    res_df.to_csv(res_df_file, sep='\t', index=False, float_format='%.4f')
 
     # for conditions in condition_pairs:
 
@@ -177,6 +189,48 @@ def correlate_contrast_pairs(subjects, sessions, glms, roi_maskers):
                 corr_dfs.append(corr_df)
 
     return pd.concat(corr_dfs, axis=0, ignore_index=True)
+
+
+def run_similarity_stats(df, roi_maskers):
+    """Run linear mixed models on the correlation data, separately for each
+    pair of condition and region of interest."""
+
+    res_dfs = []
+    for pair_label in CONTRAST_PAIRS.keys():
+        for roi_label in roi_maskers.keys():
+            model_df = df.query(f'pair_label == "{pair_label}" & ' +
+                                f'roi_label == "{roi_label}"')
+            bs, zs = fit_mixed_model(FORMULA, model_df)
+            res_df = pd.DataFrame({'pair_label': pair_label,
+                                   'roi_label': roi_label,
+                                   'effect': ['intercept', 'linear', 'quadratic'],
+                                   'beta': bs,
+                                   'z': zs})
+            res_dfs.append(res_df)
+
+    res_df = pd.concat(res_dfs, axis=0, ignore_index=True)
+    res_df['p'] = norm.sf(np.abs(res_df['z'])) * 2
+
+    return res_df
+
+
+def fit_mixed_model(formula, df):
+    """Fits a mixed model to a DataFrame using the `MixedModels package in Julia."""
+
+    model_cmd = f"""
+        using MixedModels
+        using Suppressor
+
+        function fit_mixed_model(df)
+          fml = @formula({formula})
+          mod = @suppress fit(MixedModel, fml, df)
+          bs = mod.beta
+          zs = mod.beta ./ mod.stderror
+        return bs, zs
+        end"""
+    fit_mixed_model_julia = jl.seval(model_cmd)
+
+    return fit_mixed_model_julia(df)
 
 
 if __name__ == '__main__':
