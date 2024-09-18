@@ -28,8 +28,10 @@ DF_QUERY = 'subject.str.startswith("SA") & perc_outliers <= 0.25 & n_sessions >=
 # Inpupt parameters: First-level GLM
 TASK = 'language'
 SPACE = 'MNI152NLin2009cAsym'
+BLOCKWISE = False
 SMOOTHING_FWHM = 5.0
 HRF_MODEL = 'glover + derivative + dispersion'
+SAVE_RESIDUALS = True
 CONTRASTS = {
     'audios-noise': (('audios_noise',), ()),
     'audios-pseudo': (('audios_pseudo',), ()),
@@ -62,8 +64,9 @@ def main():
 
     # Fit first-level GLM, separately for each subject and session
     glms, mask_imgs, percs_non_steady, percs_outliers, residuals_files = \
-        run_glms(BIDS_DIR, FMRIPREP_DIR, PYBIDS_DIR, TASK, SPACE, FD_THRESHOLD,
-                 HRF_MODEL, SMOOTHING_FWHM, UNIVARIATE_DIR, N_JOBS)
+        run_glms(BIDS_DIR, FMRIPREP_DIR, PYBIDS_DIR, TASK, SPACE, BLOCKWISE,
+                 FD_THRESHOLD, HRF_MODEL, SMOOTHING_FWHM, UNIVARIATE_DIR,
+                 SAVE_RESIDUALS, N_JOBS)
 
     # Load metadata (subjects, sessions, time points) for mixed model
     df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
@@ -134,8 +137,9 @@ def main():
                               UNIVARIATE_DIR, TASK, SPACE, contrast_label, suffix)
 
 
-def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
-             hrf_model, smoothing_fwhm, output_dir, n_jobs):
+def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, blockwise,
+             fd_threshold, hrf_model, smoothing_fwhm, output_dir,
+             save_residuals, n_jobs):
     """Runs first-level GLM for all subjects and sessions."""
 
     layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir,
@@ -144,8 +148,8 @@ def run_glms(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
     subjects_sessions = get_subjects_sessions(layout, task, space)
 
     run_glm_ = partial(run_glm, bids_dir, fmriprep_dir, pybids_dir, task,
-                       space, fd_threshold, hrf_model, smoothing_fwhm,
-                       output_dir)
+                       space, blockwise, fd_threshold, hrf_model,
+                       smoothing_fwhm, output_dir, save_residuals)
 
     res = Parallel(n_jobs)(delayed(run_glm_)(subject, session)
                            for subject, session in subjects_sessions)
@@ -171,9 +175,22 @@ def get_subjects_sessions(layout, task, space):
     return sorted(subjects_sessions)
 
 
-def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
-            hrf_model, smoothing_fwhm, output_dir, subject, session):
+def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space, blockwise,
+            fd_threshold, hrf_model, smoothing_fwhm, output_dir,
+            save_residuals, subject, session):
     """Runs a first-level GLM for a given subject and session."""
+
+    # bids_dir = BIDS_DIR
+    # fmriprep_dir = FMRIPREP_DIR
+    # pybids_dir = PYBIDS_DIR
+    # task = TASK
+    # space = SPACE
+    # fd_threshold = FD_THRESHOLD
+    # hrf_model = HRF_MODEL
+    # smoothing_fwhm = SMOOTHING_FWHM
+    # output_dir = UNIVARIATE_DIR
+    # subject = 'SA01'
+    # session = '01'
 
     layout = BIDSLayout(bids_dir, derivatives=fmriprep_dir,
                         database_path=pybids_dir)
@@ -181,6 +198,11 @@ def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
     mask_img = load_mask_img(layout, subject, session, task, space)
 
     events = load_events(layout, subject, session, task)
+
+    if blockwise:
+        events['trial_type'] = [f'{trial_type}_{block_ix}'
+                                for trial_type, block_ix
+                                in zip(events['trial_type'], events.index)]
 
     func_img = load_func_img(layout, subject, session, task, space)
 
@@ -200,19 +222,26 @@ def run_glm(bids_dir, fmriprep_dir, pybids_dir, task, space, fd_threshold,
                                 mask_img=mask_img, minimize_memory=False)
     glm_small.fit(run_imgs=func_img, design_matrices=[design_matrix])
 
-    glm_big = FirstLevelModel(smoothing_fwhm=smoothing_fwhm, mask_img=mask_img,
-                              minimize_memory=False)
-    glm_big.fit(run_imgs=func_img, design_matrices=[design_matrix])
+    if not save_residuals:
 
-    residuals_dir = output_dir / f'sub-{subject}' / f'ses-{session}' / 'func'
-    residuals_dir.mkdir(parents=True, exist_ok=True)
+        return glm_small, mask_img, perc_outliers, perc_non_steady
 
-    residuals_filename = f'sub-{subject}_ses-{session}_task-{task}_space-{space}_desc-residuals.nii.gz'
-    residuals_file = residuals_dir / residuals_filename
-    residuals = glm_big.residuals[0]
-    residuals.to_filename(residuals_file)
+    else:
 
-    return glm_small, mask_img, perc_outliers, perc_non_steady, residuals_file
+        glm_big = FirstLevelModel(smoothing_fwhm=smoothing_fwhm,
+                                  mask_img=mask_img,
+                                  minimize_memory=False)
+        glm_big.fit(run_imgs=func_img, design_matrices=[design_matrix])
+
+        func_dir = output_dir / f'sub-{subject}' / f'ses-{session}' / 'func'
+        func_dir.mkdir(parents=True, exist_ok=True)
+
+        residuals_filename = f'sub-{subject}_ses-{session}_task-{task}_space-{space}_desc-residuals.nii.gz'
+        residuals_file = func_dir / residuals_filename
+        residuals = glm_big.residuals[0]
+        residuals.to_filename(residuals_file)
+
+        return glm_small, mask_img, perc_outliers, perc_non_steady, residuals_file
 
 
 def load_mask_img(layout, subject, session, task, space):

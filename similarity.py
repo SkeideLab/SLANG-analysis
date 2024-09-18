@@ -13,6 +13,7 @@ from univariate import (BIDS_DIR, CONTRASTS, DERIVATIVES_DIR, DF_QUERY,
                         PYBIDS_DIR, SPACE, TASK, UNIVARIATE_DIR,
                         compute_beta_img, load_df, run_glms)
 
+# Input parameters: Input/output directories
 SIMILARITY_DIR = DERIVATIVES_DIR / 'similarity'
 TEMPLATEFLOW_DIR = DERIVATIVES_DIR / 'templateflow'
 
@@ -21,8 +22,12 @@ TEMPLATEFLOW_DIR = DERIVATIVES_DIR / 'templateflow'
 TEMPLATE_DIR = TEMPLATEFLOW_DIR / f'tpl-{SPACE}'
 ATLAS_FILE = TEMPLATE_DIR / f'glasser_{SPACE}_labels_p20.nii.gz'
 
-# Inpupt parameters: First-level GLM + similarity analysis
+# Inpupt parameters: First-level GLM
+BLOCKWISE = False
 SMOOTHING_FWHM = None
+SAVE_RESIDUALS = False
+
+# Input parameters: Similarity analysis
 CONTRAST_PAIRS = {
     'noise': (('images_noise', None),
               ('audios_noise', None)),
@@ -46,14 +51,13 @@ FORMULA = 'r ~ time + time2 + (time + time2 | subject)'
 def main():
     """Main function for running the full similarity analysis."""
 
-    # Load BIDS structure
     layout = BIDSLayout(BIDS_DIR, derivatives=FMRIPREP_DIR,
                         database_path=PYBIDS_DIR)
 
-    # Fit first-level GLM, separately for each subject and session
-    glms, mask_imgs, percs_non_steady, percs_outliers, residuals_files = \
-        run_glms(BIDS_DIR, FMRIPREP_DIR, PYBIDS_DIR, TASK, SPACE, FD_THRESHOLD,
-                 HRF_MODEL, SMOOTHING_FWHM, SIMILARITY_DIR, N_JOBS)
+    glms, mask_imgs, percs_non_steady, percs_outliers = \
+        run_glms(BIDS_DIR, FMRIPREP_DIR, PYBIDS_DIR, TASK, SPACE, BLOCKWISE,
+                 FD_THRESHOLD, HRF_MODEL, SMOOTHING_FWHM, SIMILARITY_DIR,
+                 SAVE_RESIDUALS, N_JOBS)
 
     df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
     subjects = df['subject'].tolist()
@@ -62,22 +66,16 @@ def main():
 
     glms = [glms[ix] for ix in good_ixs]
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
-    residuals_files = [residuals_files[ix] for ix in good_ixs]
 
-    atlas_img = resample_to_img(ATLAS_FILE, mask_imgs[0],
-                                interpolation='nearest')
-    anat_roi_maskers = get_anat_rois(atlas_img)
-    func_roi_maskers = get_func_rois()
-    roi_maskers = {**anat_roi_maskers, **func_roi_maskers}
+    roi_maskers = get_roi_maskers(ATLAS_FILE, ref_img=mask_imgs[0])
 
-    corr_df = correlate_contrast_pairs(subjects, sessions, glms, roi_maskers)
+    corr_df = compute_similarity(subjects, sessions, glms, roi_maskers)
 
     df = pd.merge(df, corr_df, on=['subject', 'session'])
     df_filename = f'task-{TASK}_space-{SPACE}_desc-correlations.tsv'
     df_file = SIMILARITY_DIR / df_filename
     df.to_csv(df_file, sep='\t', index=False, float_format='%.4f')
 
-    # # Read previously saved data frame
     # df = pd.read_csv(df_file, sep='\t')
 
     res_df = run_similarity_stats(df, roi_maskers)
@@ -103,7 +101,17 @@ def main():
     #         plt.show()
 
 
-def get_anat_rois(atlas_img):
+def get_roi_maskers(atlas_file, ref_img):
+    """Returns a dictionary of NiftiMaskers for anatomical and functional ROIs."""
+
+    atlas_img = resample_to_img(atlas_file, ref_img, interpolation='nearest')
+    anat_roi_maskers = get_anat_roi_maskers(atlas_img)
+    func_roi_maskers = get_func_roi_maskers()
+
+    return {**anat_roi_maskers, **func_roi_maskers}
+
+
+def get_anat_roi_maskers(atlas_img):
     """Returns a dictionary of NiftiMaskers for anatomical ROIs in an atlas."""
 
     roi_maskers = {}
@@ -111,12 +119,13 @@ def get_anat_rois(atlas_img):
         roi_img = math_img(f'np.sum(img == roi for roi in {roi_nos})',
                            img=atlas_img)
         roi_masker = NiftiMasker(mask_img=roi_img, standardize=True)
+        roi_masker.fit()
         roi_maskers[roi_label] = roi_masker
 
     return roi_maskers
 
 
-def get_func_rois():
+def get_func_roi_maskers():
     """Returns a dictionary of NiftiMaskers for functional ROIs from the
     univariate analysis.
 
@@ -138,6 +147,7 @@ def get_func_rois():
             cluster_hemi = get_cluster_hemi(cluster_img)
             roi_label = f'{contrast}-{cluster_hemi}'
             roi_masker = NiftiMasker(mask_img=cluster_img, standardize=True)
+            roi_masker.fit()
             roi_maskers[roi_label] = roi_masker
 
     return roi_maskers
@@ -154,7 +164,7 @@ def get_cluster_hemi(one_cluster_img):
         return 'right'
 
 
-def correlate_contrast_pairs(subjects, sessions, glms, roi_maskers):
+def compute_similarity(subjects, sessions, glms, roi_maskers):
     """Correlate beta values for pairs of contrasts in all ROIs."""
 
     corr_dfs = []
@@ -188,7 +198,7 @@ def correlate_contrast_pairs(subjects, sessions, glms, roi_maskers):
                                        index=[0])
                 corr_dfs.append(corr_df)
 
-    return pd.concat(corr_dfs, axis=0, ignore_index=True)
+    return pd.concat(corr_dfs, ignore_index=True)
 
 
 def run_similarity_stats(df, roi_maskers):
