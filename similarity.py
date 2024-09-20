@@ -83,57 +83,45 @@ def main():
     res_df_file = SIMILARITY_DIR / res_df_filename
     res_df.to_csv(res_df_file, sep='\t', index=False, float_format='%.4f')
 
-    # for conditions in condition_pairs:
-
-    #     for glasser_roi_label in glasser_roi_labels:
-
-    #         plot_df = df.query(f'condition_a == "{conditions[0]}" & ' +
-    #                            f'condition_b == "{conditions[1]}" & ' +
-    #                            f'roi_label == "{glasser_roi_label}"')
-
-    #         sns.lineplot(data=plot_df, x='time', y='r', hue='subject',
-    #                      marker='o', legend=False)
-    #         plt.ylim(-1.0, 1.0)
-    #         plt.title(f'Correlation between "{conditions[0]}" and ' +
-    #                   f'"{conditions[1]}" in {glasser_roi_label}')
-    #         plt.xlabel('Time (months)')
-    #         plt.ylabel('Correlation')
-    #         plt.show()
-
 
 def get_roi_maskers(atlas_file, ref_img):
-    """Returns a dictionary of NiftiMaskers for anatomical and functional ROIs."""
+    """Returns a dictionary of ROI maskers for anatomical and functional ROIs."""
+
+    roi_imgs = get_roi_imgs(atlas_file, ref_img)
+    return make_roi_maskers(roi_imgs)
+
+
+def get_roi_imgs(atlas_file, ref_img):
+    """Returns a dictionary of ROI mask images for anatomical and functional ROIs."""
 
     atlas_img = resample_to_img(atlas_file, ref_img, interpolation='nearest')
-    anat_roi_maskers = get_anat_roi_maskers(atlas_img)
-    func_roi_maskers = get_func_roi_maskers()
+    anat_roi_imgs = get_anat_roi_imgs(atlas_img)
+    func_roi_imgs = get_func_roi_imgs()
 
-    return {**anat_roi_maskers, **func_roi_maskers}
+    return {**anat_roi_imgs, **func_roi_imgs}
 
 
-def get_anat_roi_maskers(atlas_img):
-    """Returns a dictionary of NiftiMaskers for anatomical ROIs in an atlas."""
+def get_anat_roi_imgs(atlas_img):
+    """Returns a dictionary of ROI mask images for anatomical ROIs in an atlas."""
 
-    roi_maskers = {}
+    roi_imgs = {}
     for roi_label, roi_nos in GLASSER_ROIS.items():
         roi_img = math_img(f'np.sum(img == roi for roi in {roi_nos})',
                            img=atlas_img)
-        roi_masker = NiftiMasker(mask_img=roi_img, standardize=True)
-        roi_masker.fit()
-        roi_maskers[roi_label] = roi_masker
+        roi_imgs[roi_label] = roi_img
 
-    return roi_maskers
+    return roi_imgs
 
 
-def get_func_roi_maskers():
-    """Returns a dictionary of NiftiMaskers for functional ROIs from the
+def get_func_roi_imgs():
+    """Returns a dictionary of ROI mask images for functional ROIs from the
     univariate analysis.
 
     For each contrast, the top 2 largest clusters are extracted (typically the
     left and right auditory cortex for auditory contrasts and the left and
     right visual cortex for visual contrasts)."""
 
-    roi_maskers = {}
+    roi_imgs = {}
     for contrast in CONTRASTS:
 
         if 'minus' in contrast:
@@ -143,25 +131,35 @@ def get_func_roi_maskers():
         clusters_file = UNIVARIATE_DIR / clusters_filename
 
         for ix in range(1, 3):  # Use top 2 largest clusters only
-            cluster_img = math_img(f'img == {ix}', img=clusters_file)
-            cluster_hemi = get_cluster_hemi(cluster_img)
-            roi_label = f'{contrast}-{cluster_hemi}'
-            roi_masker = NiftiMasker(mask_img=cluster_img, standardize=True)
-            roi_masker.fit()
-            roi_maskers[roi_label] = roi_masker
+            roi_img = math_img(f'img == {ix}', img=clusters_file)
+            roi_hemi = get_roi_hemi(roi_img)
+            roi_label = f'{contrast}-{roi_hemi}'
+            roi_imgs[roi_label] = roi_img
 
-    return roi_maskers
+    return roi_imgs
 
 
-def get_cluster_hemi(one_cluster_img):
-    """Returns the hemisphere (left or right) of the single (!) cluster in img."""
+def get_roi_hemi(roi_img):
+    """Returns the hemisphere (left or right) of the single (!) ROI cluster in img."""
 
-    y = get_clusters_table(one_cluster_img, stat_threshold=0.1)['X'][0]
+    y = get_clusters_table(roi_img, stat_threshold=0.1)['X'][0]
 
     if y < 0:
         return 'left'
     else:
         return 'right'
+
+
+def make_roi_maskers(roi_imgs):
+    """Returns a dictionary of ROI maskers from binary ROI mask images."""
+
+    roi_maskers = {}
+    for roi_label, roi_img in roi_imgs.items():
+        roi_masker = NiftiMasker(roi_img, standardize=True)
+        roi_masker.fit()
+        roi_maskers[roi_label] = roi_masker
+
+    return roi_maskers
 
 
 def compute_similarity(subjects, sessions, glms, roi_maskers):
