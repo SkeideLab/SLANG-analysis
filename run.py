@@ -153,7 +153,7 @@ job_id = submit_job(args, dependency_jobs=job_ids, dependency_type='afterany',
 # %%
 script = script_dir / 'univariate.sh'
 args = [script, deriv_dir]
-job_id = submit_job(args, cpus=72, mem=512000, dependency_jobs=job_id,
+job_id = submit_job(args, cpus=72, mem=256000, dependency_jobs=job_id,
                     dependency_type='afterok', log_dir=log_dir,
                     job_name='univariate')
 
@@ -163,6 +163,13 @@ args = [script, deriv_dir]
 job_id = submit_job(args, cpus=72, mem=256000, dependency_jobs=job_id,
                     dependency_type='afterok', log_dir=log_dir,
                     job_name='similarity')
+
+# %%
+script = script_dir / 'stability.sh'
+args = [script, deriv_dir]
+job_id = submit_job(args, cpus=72, mem=256000, dependency_jobs=job_id,
+                    dependency_type='afterok', log_dir=log_dir,
+                    job_name='stability')
 
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
