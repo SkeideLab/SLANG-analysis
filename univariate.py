@@ -54,6 +54,9 @@ CLUSTSIM_VOXEL_THRESHOLD = 0.001
 CLUSTSIM_CLUSTER_THRESHOLD = 0.05
 CLUSTSIM_ITER = 10000
 
+# Input parameters: Group-level linear mixed models
+FORMULA = 'beta ~ time + time2 + (time + time2 | subject)'
+
 
 def main():
     """Main function for running the full session- and group-level analysis."""
@@ -115,11 +118,10 @@ def main():
 
         # Fit linear group-level linear mixed models using Julia
         print(f'Fitting mixed models for contrast "{contrast_label}"...')
-        formula = 'beta ~ time + time2 + (time + time2 | subject)'
         voxel_ixs = np.transpose(mask.nonzero())
         betas_per_voxel = [betas[:, x, y, z] for x, y, z in voxel_ixs]
         dfs = [df.assign(beta=betas) for betas in betas_per_voxel]
-        res = fit_mixed_models(formula, dfs)
+        res = fit_mixed_models(FORMULA, dfs)
         bs, zs = zip(*res)
         b0, b1, b2 = np.array(bs).T
         z0, z1, z2 = np.array(zs).T
