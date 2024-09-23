@@ -4,7 +4,9 @@ from warnings import warn
 import numpy as np
 import pandas as pd
 from bids import BIDSLayout
-from similarity import ATLAS_FILE, GLASSER_ROIS, get_roi_maskers
+from juliacall import Main as jl
+from scipy.stats import norm
+from similarity import ATLAS_FILE, FORMULA, GLASSER_ROIS, get_roi_maskers
 from univariate import (BIDS_DIR, CONTRASTS, DERIVATIVES_DIR, DF_QUERY,
                         FD_THRESHOLD, FMRIPREP_DIR, PYBIDS_DIR, SPACE, TASK,
                         compute_beta_img, load_meta_df, run_glms)
@@ -47,8 +49,6 @@ def main():
     # Get anatomical and functional regions of interest
     roi_maskers = get_roi_maskers(ATLAS_FILE, ref_img=mask_imgs[0])
     anat_roi_labels = list(GLASSER_ROIS.keys())
-    func_roi_labels = [roi_label for roi_label in roi_maskers.keys()
-                       if roi_label not in anat_roi_labels]
 
     # Run pattern stability analysis
     corr_df = compute_stability(subjects, sessions, glms,
@@ -138,6 +138,52 @@ def compute_stability(subjects, sessions, glms, roi_maskers, anat_roi_labels):
                 corr_dfs.append(corr_df)
 
     return pd.concat(corr_dfs, ignore_index=True)
+
+
+def run_stability_stats(corr_df):
+    """Run linear mixed models on the correlation data, separately for each
+    pair of condition and region of interest."""
+
+    stat_dfs = []
+    for contrast_label in corr_df['contrast_label'].unique():
+
+        contrast_df = corr_df.query(f'contrast_label == "{contrast_label}"')
+
+        for roi_label in contrast_df['roi_label'].unique():
+
+            model_df = corr_df.query(f'contrast_label == "{contrast_label}" & ' +
+                                     f'roi_label == "{roi_label}"')
+            bs, zs = fit_mixed_model(FORMULA, model_df)
+            stat_df = pd.DataFrame({'contrast_label': contrast_label,
+                                    'roi_label': roi_label,
+                                    'effect': ['intercept', 'linear', 'quadratic'],
+                                    'beta': bs,
+                                    'z': zs})
+            stat_dfs.append(stat_df)
+
+    stat_df = pd.concat(stat_dfs, axis=0, ignore_index=True)
+    stat_df['p'] = norm.sf(np.abs(stat_df['z'])) * 2
+
+    return stat_df
+
+
+def fit_mixed_model(formula, df):
+    """Fits a mixed model to a DataFrame using the `MixedModels package in Julia."""
+
+    model_cmd = f"""
+        using MixedModels
+        using Suppressor
+
+        function fit_mixed_model(df)
+          fml = @formula({formula})
+          mod = @suppress fit(MixedModel, fml, df)
+          bs = mod.beta
+          zs = mod.beta ./ mod.stderror
+        return bs, zs
+        end"""
+    fit_mixed_model_julia = jl.seval(model_cmd)
+
+    return fit_mixed_model_julia(df)
 
 
 if __name__ == '__main__':
