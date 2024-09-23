@@ -7,7 +7,7 @@ from bids import BIDSLayout
 from similarity import ATLAS_FILE, GLASSER_ROIS, get_roi_maskers
 from univariate import (BIDS_DIR, CONTRASTS, DERIVATIVES_DIR, DF_QUERY,
                         FD_THRESHOLD, FMRIPREP_DIR, PYBIDS_DIR, SPACE, TASK,
-                        compute_beta_img, load_df, run_glms)
+                        compute_beta_img, load_meta_df, run_glms)
 
 # Input parameters: Input/output directories
 STABILITY_DIR = DERIVATIVES_DIR / 'stability'
@@ -34,10 +34,11 @@ def main():
                  SAVE_RESIDUALS, N_JOBS)
 
     # Load metadata
-    df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
-    subjects = df['subject'].tolist()
-    sessions = df['session'].tolist()
-    good_ixs = list(df.index)
+    meta_df = load_meta_df(layout, TASK, percs_non_steady, percs_outliers,
+                           DF_QUERY)
+    subjects = meta_df['subject'].tolist()
+    sessions = meta_df['session'].tolist()
+    good_ixs = list(meta_df.index)
 
     # Exclude subjects/session that don't match the query
     glms = [glms[ix] for ix in good_ixs]
@@ -55,10 +56,19 @@ def main():
 
     # Save results
     STABILITY_DIR.mkdir(exist_ok=True, parents=True)
-    df = pd.merge(df, corr_df, on=['subject', 'session'])
-    df_filename = f'task-{TASK}_space-{SPACE}_desc-stability.tsv'
-    df_file = STABILITY_DIR / df_filename
-    df.to_csv(df_file, sep='\t', index=False, float_format='%.4f')
+    corr_df = pd.merge(meta_df, corr_df, on=['subject', 'session'])
+    corr_df_filename = f'task-{TASK}_space-{SPACE}_desc-stability_corrs.tsv'
+    corr_df_file = STABILITY_DIR / corr_df_filename
+    corr_df.to_csv(corr_df_file, sep='\t', index=False, float_format='%.4f')
+
+    # # Load previously saved results
+    # corr_df = pd.read_csv(corr_df_file, sep='\t')
+
+    # Run statistical analysis
+    stat_df = run_stability_stats(corr_df)
+    stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-stability_stats.tsv'
+    stat_df_file = STABILITY_DIR / stat_df_filename
+    stat_df.to_csv(stat_df_file, sep='\t', index=False, float_format='%.4f')
 
 
 def compute_stability(subjects, sessions, glms, roi_maskers, anat_roi_labels):

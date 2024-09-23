@@ -59,29 +59,32 @@ def main():
                  FD_THRESHOLD, HRF_MODEL, SMOOTHING_FWHM, SIMILARITY_DIR,
                  SAVE_RESIDUALS, N_JOBS)
 
-    df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
-    subjects = df['subject'].tolist()
-    sessions = df['session'].tolist()
-    good_ixs = list(df.index)
+    meta_df = load_meta_df(layout, TASK, percs_non_steady, percs_outliers,
+                           DF_QUERY)
+    subjects = meta_df['subject'].tolist()
+    sessions = meta_df['session'].tolist()
+    good_ixs = list(meta_df.index)
 
     glms = [glms[ix] for ix in good_ixs]
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
 
     roi_maskers = get_roi_maskers(ATLAS_FILE, ref_img=mask_imgs[0])
 
-    corr_df = compute_similarity(subjects, sessions, glms, roi_maskers)
+    corr_df = compute_similarity(subjects, sessions, glms,
+                                 roi_maskers, anat_roi_labels)
 
-    df = pd.merge(df, corr_df, on=['subject', 'session'])
-    df_filename = f'task-{TASK}_space-{SPACE}_desc-correlations.tsv'
-    df_file = SIMILARITY_DIR / df_filename
-    df.to_csv(df_file, sep='\t', index=False, float_format='%.4f')
+    SIMILARITY_DIR.mkdir(exist_ok=True, parents=True)
+    corr_df = pd.merge(meta_df, corr_df, on=['subject', 'session'])
+    corr_df_filename = f'task-{TASK}_space-{SPACE}_desc-similarity_corrs.tsv'
+    corr_df_file = SIMILARITY_DIR / corr_df_filename
+    corr_df.to_csv(corr_df_file, sep='\t', index=False, float_format='%.4f')
 
-    # df = pd.read_csv(df_file, sep='\t')
+    # corr_df = pd.read_csv(corr_df_file, sep='\t', dtype={'session': str})
 
-    res_df = run_similarity_stats(df, roi_maskers)
-    res_df_filename = f'task-{TASK}_space-{SPACE}_desc-stats.tsv'
-    res_df_file = SIMILARITY_DIR / res_df_filename
-    res_df.to_csv(res_df_file, sep='\t', index=False, float_format='%.4f')
+    stat_df = run_similarity_stats(corr_df, roi_maskers)
+    stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-similarity_stats.tsv'
+    stat_df_file = SIMILARITY_DIR / stat_df_filename
+    stat_df.to_csv(stat_df_file, sep='\t', index=False, float_format='%.4f')
 
 
 def get_roi_maskers(atlas_file, ref_img):
@@ -199,27 +202,25 @@ def compute_similarity(subjects, sessions, glms, roi_maskers):
     return pd.concat(corr_dfs, ignore_index=True)
 
 
-def run_similarity_stats(df, roi_maskers):
+def run_similarity_stats(corr_df, roi_maskers):
     """Run linear mixed models on the correlation data, separately for each
     pair of condition and region of interest."""
 
-    res_dfs = []
-    for pair_label in CONTRAST_PAIRS.keys():
-        for roi_label in roi_maskers.keys():
-            model_df = df.query(f'pair_label == "{pair_label}" & ' +
-                                f'roi_label == "{roi_label}"')
-            bs, zs = fit_mixed_model(FORMULA, model_df)
-            res_df = pd.DataFrame({'pair_label': pair_label,
-                                   'roi_label': roi_label,
-                                   'effect': ['intercept', 'linear', 'quadratic'],
-                                   'beta': bs,
-                                   'z': zs})
-            res_dfs.append(res_df)
+    stat_dfs = []
+    for contrast_label, contrast_corr_df in corr_df.groupby('contrast_label'):
+        for roi_label, roi_corr_df in contrast_corr_df.groupby('roi_label'):
+            bs, zs = fit_mixed_model(FORMULA, roi_corr_df)
+            stat_df = pd.DataFrame({'contrast_label': contrast_label,
+                                    'roi_label': roi_label,
+                                    'effect': ['intercept', 'linear', 'quadratic'],
+                                    'beta': bs,
+                                    'z': zs})
+            stat_dfs.append(stat_df)
 
-    res_df = pd.concat(res_dfs, axis=0, ignore_index=True)
-    res_df['p'] = norm.sf(np.abs(res_df['z'])) * 2
+    stat_df = pd.concat(stat_dfs, axis=0, ignore_index=True)
+    stat_df['p'] = norm.sf(np.abs(stat_df['z'])) * 2
 
-    return res_df
+    return stat_df
 
 
 def fit_mixed_model(formula, df):

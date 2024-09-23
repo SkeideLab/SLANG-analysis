@@ -72,10 +72,12 @@ def main():
                  SAVE_RESIDUALS, N_JOBS)
 
     # Load metadata (subjects, sessions, time points) for mixed model
-    df = load_df(layout, TASK, percs_non_steady, percs_outliers, DF_QUERY)
-    df_file = UNIVARIATE_DIR / f'task-{TASK}_space-{SPACE}_desc-metadata.tsv'
-    df.to_csv(df_file, sep='\t', index=False, float_format='%.5f')
-    good_ixs = list(df.index)
+    meta_df = load_meta_df(layout, TASK, percs_non_steady, percs_outliers,
+                           DF_QUERY)
+    meta_df_filename = f'task-{TASK}_space-{SPACE}_desc-metadata.tsv'
+    meta_df_file = UNIVARIATE_DIR / meta_df_filename
+    meta_df.to_csv(meta_df_file, sep='\t', index=False, float_format='%.5f')
+    good_ixs = list(meta_df.index)
 
     # Combine brain masks
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
@@ -110,8 +112,8 @@ def main():
         betas = np.array(betas).squeeze()
 
         # Save beta images
-        subjects = df['subject']
-        sessions = df['session']
+        subjects = meta_df['subject']
+        sessions = meta_df['session']
         for beta_img, subject, session in zip(beta_imgs, subjects, sessions):
             save_beta_img(beta_img, UNIVARIATE_DIR, subject, session, TASK,
                           SPACE, contrast_label)
@@ -120,8 +122,10 @@ def main():
         print(f'Fitting mixed models for contrast "{contrast_label}"...')
         voxel_ixs = np.transpose(mask.nonzero())
         betas_per_voxel = [betas[:, x, y, z] for x, y, z in voxel_ixs]
-        dfs = [df.assign(beta=betas) for betas in betas_per_voxel]
-        res = fit_mixed_models(FORMULA, dfs)
+        model_df = meta_df[['subject', 'session', 'perc_non_steady',
+                            'perc_outliers', 'time', 'time2']]
+        model_dfs = [model_df.assign(beta=betas) for betas in betas_per_voxel]
+        res = fit_mixed_models(FORMULA, model_dfs)
         bs, zs = zip(*res)
         b0, b1, b2 = np.array(bs).T
         z0, z1, z2 = np.array(zs).T
@@ -350,7 +354,7 @@ def add_outlier_regressors(confounds, fd_threshold=0.5):
     return confounds, outlier_cols
 
 
-def load_df(layout, task, percs_outliers, percs_non_steady, df_query):
+def load_meta_df(layout, task, percs_outliers, percs_non_steady, df_query):
     """Load the DataFrame with the subject/session metadata for the mixed model."""
 
     df = layout.get_collections(task=task, level='session', types='scans',
@@ -367,8 +371,7 @@ def load_df(layout, task, percs_outliers, percs_non_steady, df_query):
 
     df = df.query(df_query)
 
-    return df[['subject', 'session', 'perc_non_steady', 'perc_outliers',
-               'time', 'time2']]
+    return df
 
 
 def combine_save_mask_imgs(mask_imgs, output_dir, task, space,
