@@ -111,14 +111,16 @@ def compute_stability(subjects, sessions, glms, roi_maskers, anat_roi_labels):
 
             pairs = list(combinations(beta_imgs, 2))
 
-            this_func_roi_labels = [roi_label for roi_label in roi_maskers.keys()
-                                    if roi_label.startswith(contrast_label)]
-            this_roi_labels = anat_roi_labels + this_func_roi_labels
-            this_roi_maskers = {roi_label: roi_masker
-                                for roi_label, roi_masker in roi_maskers.items()
-                                if roi_label in this_roi_labels}
+            condition = contrast_label.split('-')[1]
+            assert condition in ['noise', 'pseudo', 'words']
+            func_roi_labels = [roi_label for roi_label in roi_maskers.keys()
+                               if f'-{condition}-' in roi_label]
+            roi_labels = anat_roi_labels + func_roi_labels
+            roi_maskers_ = {roi_label: roi_masker
+                            for roi_label, roi_masker in roi_maskers.items()
+                            if roi_label in roi_labels}
 
-            for roi_label, roi_masker in this_roi_maskers.items():
+            for roi_label, roi_masker in roi_maskers_.items():
 
                 betas = [roi_masker.transform(beta_img)[0]
                          for beta_img in beta_imgs]

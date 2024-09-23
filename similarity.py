@@ -11,7 +11,7 @@ from scipy.stats import norm
 from univariate import (BIDS_DIR, CONTRASTS, DERIVATIVES_DIR, DF_QUERY,
                         FD_THRESHOLD, FMRIPREP_DIR, HRF_MODEL, N_JOBS,
                         PYBIDS_DIR, SPACE, TASK, UNIVARIATE_DIR,
-                        compute_beta_img, load_df, run_glms)
+                        compute_beta_img, load_meta_df, run_glms)
 
 # Input parameters: Input/output directories
 SIMILARITY_DIR = DERIVATIVES_DIR / 'similarity'
@@ -69,6 +69,7 @@ def main():
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
 
     roi_maskers = get_roi_maskers(ATLAS_FILE, ref_img=mask_imgs[0])
+    anat_roi_labels = list(GLASSER_ROIS.keys())
 
     corr_df = compute_similarity(subjects, sessions, glms,
                                  roi_maskers, anat_roi_labels)
@@ -165,21 +166,29 @@ def make_roi_maskers(roi_imgs):
     return roi_maskers
 
 
-def compute_similarity(subjects, sessions, glms, roi_maskers):
+def compute_similarity(subjects, sessions, glms, roi_maskers, anat_roi_labels):
     """Correlate beta values for pairs of contrasts in all ROIs."""
 
     corr_dfs = []
     for subject, session, glm in zip(subjects, sessions, glms):
 
-        for pair_label, pair in CONTRAST_PAIRS.items():
+        for contrast_label, contrast_pair in CONTRAST_PAIRS.items():
 
-            assert len(pair) == 2
+            assert len(contrast_pair) == 2
 
-            for roi_label, roi_masker in roi_maskers.items():
+            condition = contrast_label.split('-')[0]
+            func_roi_labels = [roi_label for roi_label in roi_maskers.keys()
+                               if f'-{condition}-' in roi_label]
+            roi_labels = anat_roi_labels + func_roi_labels
+            roi_maskers_ = {roi_label: roi_masker
+                            for roi_label, roi_masker in roi_maskers.items()
+                            if roi_label in roi_labels}
+
+            for roi_label, roi_masker in roi_maskers_.items():
 
                 condition_betas = []
 
-                for conditions in pair:
+                for conditions in contrast_pair:
 
                     beta_img = \
                         compute_beta_img(glm,
@@ -193,7 +202,7 @@ def compute_similarity(subjects, sessions, glms, roi_maskers):
 
                 corr_df = pd.DataFrame({'subject': subject,
                                         'session': session,
-                                        'pair_label': pair_label,
+                                        'contrast_label': contrast_label,
                                         'roi_label': roi_label,
                                         'r': corr},
                                        index=[0])
