@@ -7,7 +7,8 @@ import pandas as pd
 import seaborn as sns
 from nilearn.image import load_img, math_img
 from nilearn.plotting import plot_glass_brain
-from similarity import ATLAS_FILE, GLASSER_ROIS, SIMILARITY_DIR, get_roi_imgs
+from similarity import ATLAS_FILE, SIMILARITY_DIR, get_roi_imgs
+from stability import STABILITY_DIR
 from univariate import CONTRASTS, SPACE, TASK, UNIVARIATE_DIR
 
 mpl.rcParams.update({"font.family": ["Open Sans"], "font.size": 12})
@@ -26,7 +27,32 @@ def main():
                           dtype={'subject': str, 'session': str})
 
     example_img = plot_univariate(meta_df)
-    plot_similarity(example_img)
+
+    # example_img = load_img(UNIVARIATE_DIR / 'task-language_space-MNI152NLin2009cAsym_desc-audios-noise_b0.nii.gz')
+
+    similarity_corr_df_filename = f'task-{TASK}_space-{SPACE}_desc-similarity_corrs.tsv'
+    similarity_corr_df_file = SIMILARITY_DIR / similarity_corr_df_filename
+    similarity_corr_df = pd.read_csv(similarity_corr_df_file, sep='\t')
+
+    similarity_stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-similarity_stats.tsv'
+    similarity_stat_df_file = SIMILARITY_DIR / similarity_stat_df_filename
+    similarity_stat_df = pd.read_csv(similarity_stat_df_file, sep='\t')
+
+    plot_corrs(similarity_corr_df, similarity_stat_df, example_img,
+               title_prefix='Audio-visual pattern similarity',
+               output_dir=SIMILARITY_DIR, suffix='similarity')
+
+    stability_corr_df_filename = f'task-{TASK}_space-{SPACE}_desc-stability_corrs.tsv'
+    stability_corr_df_file = STABILITY_DIR / stability_corr_df_filename
+    stability_corr_df = pd.read_csv(stability_corr_df_file, sep='\t')
+
+    stability_stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-stability_stats.tsv'
+    stability_stat_df_file = STABILITY_DIR / stability_stat_df_filename
+    stability_stat_df = pd.read_csv(stability_stat_df_file, sep='\t')
+
+    plot_corrs(stability_corr_df, stability_stat_df, example_img,
+               title_prefix='Pattern stability', output_dir=STABILITY_DIR,
+               suffix='stability')
 
 
 def plot_univariate(meta_df):
@@ -185,39 +211,22 @@ def add_quadratic_line(intercept, linear, quadratic):
     plt.plot(x_vals, y_vals, '--', color='black')
 
 
-def plot_similarity(example_img):
+def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
 
-    fig_dir = SIMILARITY_DIR / 'figures'
+    fig_dir = output_dir / 'figures'
     fig_dir.mkdir(exist_ok=True)
-
-    corr_df_filename = f'task-{TASK}_space-{SPACE}_desc-correlations.tsv'
-    corr_df_file = SIMILARITY_DIR / corr_df_filename
-    corr_df = pd.read_csv(corr_df_file, sep='\t')
-
-    stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-stats.tsv'
-    stat_df_file = SIMILARITY_DIR / stat_df_filename
-    stat_df = pd.read_csv(stat_df_file, sep='\t')
 
     roi_imgs = get_roi_imgs(ATLAS_FILE, ref_img=example_img)
 
-    all_roi_labels = list(corr_df['roi_label'].unique())
-    anat_roi_labels = list(GLASSER_ROIS.keys())
-    func_roi_labels = sorted([roi_label for roi_label in all_roi_labels
-                              if roi_label not in anat_roi_labels])
+    for contrast_label, contrast_df in corr_df.groupby('contrast_label',
+                                                       observed=False):
 
-    for pair_label, pair_df in corr_df.groupby('pair_label'):
-
-        condition = pair_label.split('-')[0]
-        this_func_roi_labels = [roi_label for roi_label in func_roi_labels
-                                if condition in roi_label]
-        this_roi_labels = anat_roi_labels + this_func_roi_labels
-        pair_df = pair_df[pair_df['roi_label'].isin(this_roi_labels)]
-
-        pair_df['roi_label'] = pair_df['roi_label'].\
+        roi_labels = contrast_df['roi_label'].unique()
+        contrast_df['roi_label'] = contrast_df['roi_label'].\
             astype('category').\
-            cat.set_categories(this_roi_labels)
+            cat.set_categories(roi_labels)
 
-        n_rois = len(this_roi_labels)
+        n_rois = len(roi_labels)
         n_cols = 2
         n_rows = n_rois // 2
         figsize = (n_cols * 8.0, n_rois * 2.0)
@@ -225,7 +234,8 @@ def plot_similarity(example_img):
 
         axs = np.ravel(axs)
         letter_ix = 0
-        for ix, (ax, (roi_label, roi_df)) in enumerate(zip(axs, pair_df.groupby('roi_label'))):
+        for ix, (ax, (roi_label, roi_df)) in \
+                enumerate(zip(axs, contrast_df.groupby('roi_label', observed=False))):
 
             roi_img = roi_imgs[roi_label]
             roi_ax_left = 0.4 if ix % 2 == 0 else 0.9
@@ -255,7 +265,7 @@ def plot_similarity(example_img):
             sns.lineplot(roi_df, x='time', y='r', hue='subject', palette='hls',
                          marker='o', markeredgewidth=0, legend=False)
 
-            this_stat_df = stat_df.query(f'pair_label == "{pair_label}" & ' +
+            this_stat_df = stat_df.query(f'contrast_label == "{contrast_label}" & ' +
                                          f'roi_label == "{roi_label}"')
             intercept = this_stat_df.loc[this_stat_df['effect']
                                          == 'intercept', 'beta'].values[0]
@@ -276,18 +286,19 @@ def plot_similarity(example_img):
             plt.ylabel('Correlation coefficient')
 
             if ix == 0:
-                pair_title_label = pair_label.\
+                pair_title_label = contrast_label.\
+                    replace('images-', 'written ').\
+                    replace('audios-', 'spoken ').\
                     replace('noise', 'low-level').\
                     replace('pseudo', 'pseudowords').\
                     replace('-minus-', ' vs. ')
-                pair_title = f'Audio-visual pattern similarity for {pair_title_label}'
+                pair_title = f'{title_prefix} for {pair_title_label}'
                 plt.annotate(pair_title, xy=(0.01, 0.93),
                              xycoords='axes fraction', size=14.0)
 
-        # plt.subplots_adjust(wspace=10.0)
         plt.tight_layout()
 
-        fig_filename = f'task-{TASK}_space-{SPACE}_desc-{pair_label}_similarity.png'
+        fig_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast_label}_{suffix}.png'
         fig_file = fig_dir / fig_filename
         fig.savefig(fig_file, dpi=600, bbox_inches='tight')
 
