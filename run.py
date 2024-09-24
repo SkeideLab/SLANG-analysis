@@ -111,6 +111,7 @@ remote = get_ria_remote(deriv_ds, ria_dir)
 participant_dirs = list(bids_dir.glob('sub-*/'))
 participants = sorted([d.name.replace('sub-', '') for d in participant_dirs])
 # participants = ['SA27']  # Custom selection for debugging
+job_id, job_ids = [], []
 
 # %% [markdown]
 # ## Run fMRIPrep
