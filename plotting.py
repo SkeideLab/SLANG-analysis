@@ -98,9 +98,14 @@ def plot_univariate(meta_df):
                            x=0.002, y=1.1)
 
         desc = aud_contrast.replace('audios-', '')
-        fig_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_clusters.png'
-        fig_file = fig_dir / fig_filename
-        fig.savefig(fig_file, dpi=600, bbox_inches='tight')
+
+        png_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_clusters.png'
+        png_file = fig_dir / png_filename
+        fig.savefig(png_file, dpi=600, bbox_inches='tight')
+
+        pdf_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_clusters.pdf'
+        pdf_file = fig_dir / pdf_filename
+        fig.savefig(pdf_file, bbox_inches='tight')
 
         letter_ix = 6
         fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(19.163, 4.0))
@@ -141,9 +146,9 @@ def plot_univariate(meta_df):
 
             else:
 
-                fig_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast}_cluster-mask.png'
-                fig_file = fig_dir / fig_filename
-                plot_glass_brain(cluster_mask, output_file=fig_file,
+                png_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast}_cluster-mask.png'
+                png_file = fig_dir / png_filename
+                plot_glass_brain(cluster_mask, output_file=png_file,
                                  display_mode='lyrz', colorbar=False, black_bg=False,
                                  title=f'{contrast} cluster mask (from {max_cluster_stat})')
 
@@ -195,9 +200,14 @@ def plot_univariate(meta_df):
                 plt.title(title, color='black', x=-0.08, y=0.93)
 
             desc = aud_contrast.replace('audios-', '')
-            fig_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_lineplot.png'
-            fig_file = fig_dir / fig_filename
-            fig.savefig(fig_file, dpi=600, bbox_inches='tight')
+
+            png_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_lineplot.png'
+            png_file = fig_dir / png_filename
+            fig.savefig(png_file, dpi=600, bbox_inches='tight')
+
+            pdf_filename = f'task-{TASK}_space-{SPACE}_desc-{desc}_lineplot.pdf'
+            pdf_file = fig_dir / pdf_filename
+            fig.savefig(pdf_file, bbox_inches='tight')
 
     return clusters_img
 
@@ -298,9 +308,13 @@ def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
 
         plt.tight_layout()
 
-        fig_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast_label}_{suffix}.png'
-        fig_file = fig_dir / fig_filename
-        fig.savefig(fig_file, dpi=600, bbox_inches='tight')
+        png_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast_label}_{suffix}.png'
+        png_file = fig_dir / png_filename
+        fig.savefig(png_file, dpi=600, bbox_inches='tight')
+
+        pdf_filename = f'task-{TASK}_space-{SPACE}_desc-{contrast_label}_{suffix}.pdf'
+        pdf_file = fig_dir / pdf_filename
+        fig.savefig(pdf_file, bbox_inches='tight')
 
 
 if __name__ == '__main__':
