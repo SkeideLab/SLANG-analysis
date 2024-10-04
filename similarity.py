@@ -35,10 +35,12 @@ CONTRAST_PAIRS = {
                ('audios_pseudo', None)),
     'words': (('images_words', None),
               ('audios_words', None)),
-    'words-minus-pseudo': (('images_words', 'images_pseudo'),
-                           ('audios_words', 'audios_pseudo')),
     'pseudo-minus-noise': (('images_pseudo', 'images_noise'),
-                           ('audios_pseudo', 'audios_noise'))}
+                           ('audios_pseudo', 'audios_noise')),
+    'words-minus-noise': (('images_words', 'images_noise'),
+                          ('audios_words', 'audios_noise')),
+    'words-minus-pseudo': (('images_words', 'images_pseudo'),
+                           ('audios_words', 'audios_pseudo'))}
 
 # Inpupt parameters: Anatomical regions of interest
 GLASSER_ROIS = {'pSTS': (128, 129, 130, 176),  # STSda, STSdp, STSvp, STSva
