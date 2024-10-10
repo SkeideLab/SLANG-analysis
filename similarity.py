@@ -1,7 +1,5 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from bids import BIDSLayout
 from juliacall import Main as jl
 from nilearn.image import math_img, resample_to_img
@@ -43,8 +41,10 @@ CONTRAST_PAIRS = {
                            ('audios_words', 'audios_pseudo'))}
 
 # Inpupt parameters: Anatomical regions of interest
-GLASSER_ROIS = {'pSTS': (128, 129, 130, 176),  # STSda, STSdp, STSvp, STSva
-                'vOT': (7, 18, 163)}  # 8th Visual Area, FFC, Ventral Visual Complex
+GLASSER_ROIS = {'psts-left': (128, 129, 130, 176),  # STSda, STSdp, STSvp, STSva
+                'psts-right': (308, 309, 310, 356),
+                'vot-left': (7, 18, 163),  # 8th Visual Area, FFC, VVC
+                'vot-right': (187, 198, 343)}
 
 # Inpupt parameters: Linear mixed models
 FORMULA = 'r ~ time + time2 + (time + time2 | subject)'
@@ -143,6 +143,8 @@ def get_func_roi_imgs():
             roi_hemi = get_roi_hemi(roi_img)
             roi_label = f'{contrast}-{roi_hemi}'
             roi_imgs[roi_label] = roi_img
+
+    roi_imgs = {label: img for label, img in sorted(roi_imgs.items())}
 
     return roi_imgs
 

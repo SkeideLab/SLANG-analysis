@@ -249,7 +249,8 @@ def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
 
             roi_img = roi_imgs[roi_label]
             roi_ax_left = 0.4 if ix % 2 == 0 else 0.9
-            roi_ax_bottom = 0.85 - (ix // 2) / n_rows
+            col_ix = (ix // 2.0)
+            roi_ax_bottom = 0.86 - col_ix * 0.99 / n_rows
             roi_ax_width = 0.09
             roi_ax_height = 0.09
             roi_ax = fig.add_axes([roi_ax_left, roi_ax_bottom,
@@ -261,7 +262,9 @@ def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
                 replace('images-', 'written\n').\
                 replace('noise', 'low-level').\
                 replace('pseudo', 'pseudow.').\
-                replace('words', 'word')
+                replace('words', 'word').\
+                replace('psts', '\npSTS').\
+                replace('vot', '\nvOT')
             if '-left' in roi_title:
                 roi_title = roi_title.replace('-left', '')
                 roi_title = f'Left {roi_title}'
@@ -288,7 +291,7 @@ def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
             letter = ascii_uppercase[letter_ix]
             letter_ix += 1
             title = f'$\\bf{{{letter}}}$'
-            plt.title(title, color='black', x=-0.095, y=0.93)
+            plt.title(title, color='black', x=-0.095, y=0.925)
 
             plt.xlim(-1.0, 17.0)
             plt.ylim(-1.1, 1.1)
