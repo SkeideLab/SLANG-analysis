@@ -72,12 +72,12 @@ def main():
                  SAVE_RESIDUALS, N_JOBS)
 
     # Load metadata (subjects, sessions, time points) for mixed model
-    meta_df = load_meta_df(layout, TASK, percs_non_steady, percs_outliers,
-                           DF_QUERY)
+    meta_df, good_ixs = load_meta_df(layout, TASK, percs_non_steady,
+                                     percs_outliers, DF_QUERY)
     meta_df_filename = f'task-{TASK}_space-{SPACE}_desc-metadata.tsv'
     meta_df_file = UNIVARIATE_DIR / meta_df_filename
     meta_df.to_csv(meta_df_file, sep='\t', index=False, float_format='%.5f')
-    good_ixs = list(meta_df.index)
+    meta_df = meta_df.loc[good_ixs]
 
     # Combine brain masks
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
@@ -369,9 +369,12 @@ def load_meta_df(layout, task, percs_outliers, percs_non_steady, df_query):
     df['time'] = df['time_diff'].dt.days / 30.437  # Convert to months
     df['time2'] = df['time'] ** 2
 
-    df = df.query(df_query)
+    good_df = df.query(df_query)
+    good_ixs = good_df.index
+    df['include'] = False
+    df.loc[good_ixs, 'include'] = True
 
-    return df
+    return df, good_ixs
 
 
 def combine_save_mask_imgs(mask_imgs, output_dir, task, space,

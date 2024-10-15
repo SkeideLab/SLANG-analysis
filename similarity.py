@@ -61,13 +61,13 @@ def main():
                  FD_THRESHOLD, HRF_MODEL, SMOOTHING_FWHM, SIMILARITY_DIR,
                  SAVE_RESIDUALS, N_JOBS)
 
-    meta_df = load_meta_df(layout, TASK, percs_non_steady, percs_outliers,
-                           DF_QUERY)
+    meta_df, good_ixs = load_meta_df(layout, TASK, percs_non_steady,
+                                     percs_outliers, DF_QUERY)
+    meta_df = meta_df.loc[good_ixs]
     meta_df = meta_df[['subject', 'session', 'n_sessions', 'perc_non_steady',
                        'perc_outliers', 'time', 'time2']]
     subjects = meta_df['subject'].tolist()
     sessions = meta_df['session'].tolist()
-    good_ixs = list(meta_df.index)
 
     glms = [glms[ix] for ix in good_ixs]
     mask_imgs = [mask_imgs[ix] for ix in good_ixs]
