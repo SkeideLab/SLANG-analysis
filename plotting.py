@@ -9,9 +9,11 @@ from nilearn.image import load_img, math_img
 from nilearn.plotting import plot_glass_brain
 from similarity import ATLAS_FILE, SIMILARITY_DIR, get_roi_imgs
 from stability import STABILITY_DIR
-from univariate import CONTRASTS, SPACE, TASK, UNIVARIATE_DIR
+from univariate import BIDS_DIR, CONTRASTS, SPACE, TASK, UNIVARIATE_DIR
 
 mpl.rcParams.update({"font.family": ["Open Sans"], "font.size": 12})
+
+SOURCEDATA_DIR = BIDS_DIR / 'sourcedata'
 
 STATS = {'z0': 'intercept', 'z1': 'linear change', 'z2': 'quadratic change'}
 
@@ -25,6 +27,12 @@ def main():
     meta_file = UNIVARIATE_DIR / f'task-{TASK}_space-{SPACE}_desc-metadata.tsv'
     meta_df = pd.read_csv(meta_file, sep='\t',
                           dtype={'subject': str, 'session': str})
+
+    plot_sessions(meta_df)
+
+    meta_df = meta_df.query('include')
+
+    plot_behavior(meta_df)
 
     example_img = plot_univariate(meta_df)
 
@@ -53,6 +61,123 @@ def main():
     plot_corrs(stability_corr_df, stability_stat_df, example_img,
                title_prefix='Pattern stability', output_dir=STABILITY_DIR,
                suffix='stability')
+
+
+def plot_sessions(meta_df):
+    """Plots the timing of sessions of all participants over time."""
+
+    fig_dir = UNIVARIATE_DIR / 'figures'
+    fig_dir.mkdir(exist_ok=True)
+
+    late_subjects = ['SA33', 'SA34', 'SA35', 'SA36', 'SA37', 'SA38', 'SA39',
+                     'SA40', 'SA41', 'SO26', 'SO27']
+    meta_df = meta_df.query('subject not in @late_subjects')
+
+    good_subjects = meta_df.query('include')['subject'].unique().tolist()
+    bad_subjects = meta_df.query('~include')['subject'].unique().tolist()
+
+    n_good_subjects = len(good_subjects)
+    good_subject_colors = list(sns.color_palette('hls', n_good_subjects))
+
+    colors = []
+    for subject in meta_df['subject'].unique():
+        if subject in good_subjects:
+            color = good_subject_colors.pop(0)
+        elif subject in bad_subjects:
+            color = 'gray'
+        colors.append(color)
+
+    palette = sns.color_palette(colors)
+
+    meta_df['participant'] = 'sub-' + meta_df['subject']
+
+    figsize = (7.0, 7.0)
+    fig = plt.figure(figsize=figsize)
+
+    sns.lineplot(meta_df, x='time', y='participant', hue='subject',
+                 palette=palette, linewidth=2, marker='o', markersize=10,
+                 markeredgewidth=0, legend=False, zorder=1)
+
+    high_motion_df = meta_df.query('perc_outliers > 0.25')
+    sns.scatterplot(high_motion_df, x='time', y='participant', color='gray',
+                    marker='X', s=150, legend=False, zorder=2)
+
+    plt.xlim(-1.0, 19.0)
+    plt.xticks(range(0, 19, 2))
+    plt.xlabel('Time (months)')
+    plt.ylabel('Participant ID')
+
+    plt.tight_layout()
+
+    png_filename = f'task-{TASK}_space-{SPACE}_sessions.png'
+    png_file = fig_dir / png_filename
+    fig.savefig(png_file, dpi=600, bbox_inches='tight')
+
+    pdf_filename = f'task-{TASK}_space-{SPACE}_sessions.pdf'
+    pdf_file = fig_dir / pdf_filename
+    fig.savefig(pdf_file, bbox_inches='tight')
+
+
+def plot_behavior(meta_df):
+    """Plots behavioral scores over time for all subtests and participants."""
+
+    fig_dir = UNIVARIATE_DIR / 'figures'
+
+    behavior_file = SOURCEDATA_DIR / 'behavior.tsv'
+    df = pd.read_csv(behavior_file, sep='\t', dtype={'session': str})
+
+    df = df.drop(columns=['yyyy_mm_dd', 'comments'])
+    df = pd.melt(df, id_vars=['subject', 'session'],
+                 var_name='test', value_name='score')
+
+    df = df.dropna()
+    df = df.drop_duplicates(subset=['subject', 'session', 'test'], keep='last')
+
+    meta_df_short = meta_df[['subject', 'session', 'time']]
+    df = pd.merge(meta_df_short, df, on=['subject', 'session'], how='left')
+
+    test_labels = {
+        'dali_1_rapid_picture_naming_seconds': 'DALI picture naming (s)',
+        'dali_2a_word_reading_words': 'DALI word reading (# words)',
+        'dali_2b_word_reading_seconds': 'DALI word reading (s)',
+        'dali_3_rhyme': 'DALI rhyme (# pairs)',
+        'dali_4_syllable_replacement': 'DALI phoneme replacement (# items)',
+        'dali_5_semantic_fluency': 'DALI semantic fluency (# words)',
+        'dali_6_verbal_fluency': 'DALI verbal fluency (# words)',
+        'dali_7a_nonword_reading_correct': 'DALI nonword reading (# correct)',
+        'dali_7b_nonword_reading_seconds': 'DALI nonword reading (s)',
+        'dali_8a_reading_comprehension_seconds': 'DALI comprehension (s)',
+        'dali_8b_reading_comprehension_questions': 'DALI comprehension (# questions)',
+        'dali_9_dictation': 'DALI dictation (# correct)',
+        'wrat5_1_oral_math': 'WRAT oral math (# correct)',
+        'wrat5_2_math_computation': 'WRAT computation (# correct)',
+        'corsi_block_fwd': 'WM forward (# items)',
+        'corsi_block_bwd': 'WM backward (# items)',
+        'digit_span_fwd': 'Digit span forward (# digits)',
+        'digit_span_bwd': 'Digit span test backward (# digits)',
+        'ravens_cpm': 'Raven\'s CPM (# correct)'}
+
+    df['test'] = df['test'].\
+        replace(test_labels).\
+        astype('category').\
+        cat.set_categories(test_labels.values())
+    df = df.dropna()
+
+    grid = sns.FacetGrid(df, col='test', hue='subject', col_wrap=4,
+                         sharey=False, aspect=1.3, palette='hls')
+    grid.map(sns.lineplot, 'time', 'score', marker='o', markeredgewidth=0)
+    grid.set_titles(col_template='{col_name}')
+    grid.set_axis_labels('Time (months)', '')
+    grid.set(xticks=range(0, 17, 4))
+    grid.tight_layout()
+
+    png_filename = f'task-{TASK}_space-{SPACE}_behavior.png'
+    png_file = fig_dir / png_filename
+    grid.savefig(png_file, dpi=600, bbox_inches='tight')
+
+    pdf_filename = f'task-{TASK}_space-{SPACE}_behavior.pdf'
+    pdf_file = fig_dir / pdf_filename
+    grid.savefig(pdf_file, bbox_inches='tight')
 
 
 def plot_univariate(meta_df):
