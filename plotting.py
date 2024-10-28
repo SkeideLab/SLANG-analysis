@@ -282,7 +282,7 @@ def plot_univariate(meta_df):
                     b_img = load_img(b_file)
                     b_vals = b_img.get_fdata()[voxel_ixs]
                     bs.append(b_vals.mean())
-                add_quadratic_line(*bs)
+                add_line(*bs)
 
                 letter = ascii_uppercase[letter_ix]
                 letter_ix += 1
@@ -302,8 +302,10 @@ def plot_univariate(meta_df):
     return clusters_img
 
 
-def add_quadratic_line(intercept, linear, quadratic):
-    """Plot a quadratic line. Adapted from https://stackoverflow.com/a/43811762"""
+def add_line(intercept=0.0, linear=0.0, quadratic=0.0):
+    """Plot a linear/quadratic line (e.g., from a fitted mixed model).
+    
+    Adapted from https://stackoverflow.com/a/43811762"""
 
     axes = plt.gca()
     x_vals = np.arange(*axes.get_xlim(), 0.1)
@@ -374,9 +376,7 @@ def plot_corrs(corr_df, stat_df, example_img, title_prefix, output_dir, suffix):
                                          == 'intercept', 'beta'].values[0]
             linear = this_stat_df.loc[this_stat_df['effect']
                                       == 'linear', 'beta'].values[0]
-            quadratic = this_stat_df.loc[this_stat_df['effect']
-                                         == 'quadratic', 'beta'].values[0]
-            add_quadratic_line(intercept, linear, quadratic)
+            add_line(intercept, linear)
 
             letter = ascii_uppercase[letter_ix]
             letter_ix += 1

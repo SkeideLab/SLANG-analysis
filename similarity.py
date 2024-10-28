@@ -47,7 +47,7 @@ GLASSER_ROIS = {'psts-left': (128, 129, 130, 176),  # STSda, STSdp, STSvp, STSva
                 'vot-right': (187, 198, 343)}
 
 # Inpupt parameters: Linear mixed models
-FORMULA = 'r ~ time + time2 + (time + time2 | subject)'
+FORMULA = 'r ~ time + (time | subject)'
 
 
 def main():
@@ -65,7 +65,7 @@ def main():
                                      percs_outliers, DF_QUERY)
     meta_df = meta_df.loc[good_ixs]
     meta_df = meta_df[['subject', 'session', 'n_sessions', 'perc_non_steady',
-                       'perc_outliers', 'time', 'time2']]
+                       'perc_outliers', 'time']]
     subjects = meta_df['subject'].tolist()
     sessions = meta_df['session'].tolist()
 
@@ -227,7 +227,7 @@ def run_similarity_stats(corr_df, roi_maskers):
             bs, zs = fit_mixed_model(FORMULA, roi_corr_df)
             stat_df = pd.DataFrame({'contrast_label': contrast_label,
                                     'roi_label': roi_label,
-                                    'effect': ['intercept', 'linear', 'quadratic'],
+                                    'effect': ['intercept', 'linear'],
                                     'beta': bs,
                                     'z': zs})
             stat_dfs.append(stat_df)
