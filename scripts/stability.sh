@@ -23,6 +23,7 @@ datalad containers-run \
   --dataset "$bids_dir" \
   --input "sub-*" \
   --input "$deriv_dir/fmriprep" \
+  --input "$deriv_dir/univariate" \
   --output "$deriv_dir/stability" \
   --message "Run stability analysis" \
   --explicit "\

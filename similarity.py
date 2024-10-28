@@ -86,7 +86,7 @@ def main():
 
     # corr_df = pd.read_csv(corr_df_file, sep='\t', dtype={'session': str})
 
-    stat_df = run_similarity_stats(corr_df, roi_maskers)
+    stat_df = run_similarity_stats(corr_df)
     stat_df_filename = f'task-{TASK}_space-{SPACE}_desc-similarity_stats.tsv'
     stat_df_file = SIMILARITY_DIR / stat_df_filename
     stat_df.to_csv(stat_df_file, sep='\t', index=False, float_format='%.4f')
@@ -217,7 +217,7 @@ def compute_similarity(subjects, sessions, glms, roi_maskers, anat_roi_labels):
     return pd.concat(corr_dfs, ignore_index=True)
 
 
-def run_similarity_stats(corr_df, roi_maskers):
+def run_similarity_stats(corr_df):
     """Run linear mixed models on the correlation data, separately for each
     pair of condition and region of interest."""
 
