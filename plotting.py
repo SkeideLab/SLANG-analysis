@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from behavior import BEHAVIOR_DIR
 from nilearn.image import load_img, math_img
 from nilearn.plotting import plot_glass_brain
 from similarity import ATLAS_FILE, SIMILARITY_DIR, get_roi_imgs
@@ -30,10 +31,9 @@ def main():
 
     plot_sessions(meta_df)
 
+    plot_behavior()
+
     meta_df = meta_df.query('include')
-
-    plot_behavior(meta_df)
-
     example_img = plot_univariate(meta_df)
 
     # example_img = load_img(UNIVARIATE_DIR / 'task-language_space-MNI152NLin2009cAsym_desc-audios-noise_b0.nii.gz')
@@ -118,50 +118,15 @@ def plot_sessions(meta_df):
     fig.savefig(pdf_file, bbox_inches='tight')
 
 
-def plot_behavior(meta_df):
+def plot_behavior():
     """Plots behavioral scores over time for all subtests and participants."""
 
-    fig_dir = UNIVARIATE_DIR / 'figures'
+    fig_dir = BEHAVIOR_DIR / 'figures'
+    fig_dir.mkdir(exist_ok=True)
 
-    behavior_file = SOURCEDATA_DIR / 'behavior.tsv'
-    df = pd.read_csv(behavior_file, sep='\t', dtype={'session': str})
-
-    df = df.drop(columns=['yyyy_mm_dd', 'comments'])
-    df = pd.melt(df, id_vars=['subject', 'session'],
-                 var_name='test', value_name='score')
-
-    df = df.dropna()
-    df = df.drop_duplicates(subset=['subject', 'session', 'test'], keep='last')
-
-    meta_df_short = meta_df[['subject', 'session', 'time']]
-    df = pd.merge(meta_df_short, df, on=['subject', 'session'], how='left')
-
-    test_labels = {
-        'dali_1_rapid_picture_naming_seconds': 'DALI picture naming (s)',
-        'dali_2a_word_reading_words': 'DALI word reading (# words)',
-        'dali_2b_word_reading_seconds': 'DALI word reading (s)',
-        'dali_3_rhyme': 'DALI rhyme (# pairs)',
-        'dali_4_syllable_replacement': 'DALI phoneme replacement (# items)',
-        'dali_5_semantic_fluency': 'DALI semantic fluency (# words)',
-        'dali_6_verbal_fluency': 'DALI verbal fluency (# words)',
-        'dali_7a_nonword_reading_correct': 'DALI nonword reading (# correct)',
-        'dali_7b_nonword_reading_seconds': 'DALI nonword reading (s)',
-        'dali_8a_reading_comprehension_seconds': 'DALI comprehension (s)',
-        'dali_8b_reading_comprehension_questions': 'DALI comprehension (# questions)',
-        'dali_9_dictation': 'DALI dictation (# correct)',
-        'wrat5_1_oral_math': 'WRAT oral math (# correct)',
-        'wrat5_2_math_computation': 'WRAT computation (# correct)',
-        'corsi_block_fwd': 'WM forward (# items)',
-        'corsi_block_bwd': 'WM backward (# items)',
-        'digit_span_fwd': 'Digit span forward (# digits)',
-        'digit_span_bwd': 'Digit span test backward (# digits)',
-        'ravens_cpm': 'Raven\'s CPM (# correct)'}
-
-    df['test'] = df['test'].\
-        replace(test_labels).\
-        astype('category').\
-        cat.set_categories(test_labels.values())
-    df = df.dropna()
+    behavior_filename = f'task-{TASK}_space-{SPACE}_desc-behavior_scores.tsv'
+    behavior_file = BEHAVIOR_DIR / behavior_filename
+    df = pd.read_csv(behavior_file, sep='\t')
 
     grid = sns.FacetGrid(df, col='test', hue='subject', col_wrap=4,
                          sharey=False, aspect=1.3, palette='hls')

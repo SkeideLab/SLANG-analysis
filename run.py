@@ -172,6 +172,13 @@ job_id = submit_job(args, cpus=72, mem=256000, dependency_jobs=job_id,
                     dependency_type='afterok', log_dir=log_dir,
                     job_name='stability')
 
+# %%
+script = script_dir / 'behavior.sh'
+args = [script, deriv_dir]
+job_id = submit_job(args, cpus=1, mem=8000, dependency_jobs=job_id,
+                    dependency_type='afterok', log_dir=log_dir,
+                    job_name='behavior')
+
 # %% [markdown]
 # [1]: https://fmriprep.org/en/stable/index.html
 # [2]: http://handbook.datalad.org/en/latest/basics/101-133-containersrun.html
