@@ -12,7 +12,7 @@ from similarity import ATLAS_FILE, SIMILARITY_DIR, get_roi_imgs
 from stability import STABILITY_DIR
 from univariate import BIDS_DIR, CONTRASTS, SPACE, TASK, UNIVARIATE_DIR
 
-mpl.rcParams.update({"font.size": 12})
+mpl.rcParams.update({"font.family": ["Open Sans"], "font.size": 12})
 
 SOURCEDATA_DIR = BIDS_DIR / 'sourcedata'
 
