@@ -27,7 +27,7 @@ datalad containers-run \
   --output "$deriv_dir/similarity" \
   --message "Run similarity analysis" \
   --explicit "\
-python3 $deriv_dir/code/similarity.py"
+python3 $deriv_dir/code/scripts/similarity.py"
 
 # And we're done
 echo SUCCESS

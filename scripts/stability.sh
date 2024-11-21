@@ -27,7 +27,7 @@ datalad containers-run \
   --output "$deriv_dir/stability" \
   --message "Run stability analysis" \
   --explicit "\
-python3 $deriv_dir/code/stability.py"
+python3 $deriv_dir/code/scripts/stability.py"
 
 # And we're done
 echo SUCCESS

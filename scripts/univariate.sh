@@ -26,7 +26,7 @@ datalad containers-run \
   --output "$deriv_dir/univariate" \
   --message "Run univariate analysis" \
   --explicit "\
-python3 $deriv_dir/code/univariate.py"
+python3 $deriv_dir/code/scripts/univariate.py"
 
 # And we're done
 echo SUCCESS

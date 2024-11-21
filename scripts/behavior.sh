@@ -26,7 +26,7 @@ datalad containers-run \
   --output "$deriv_dir/behavior" \
   --message "Run behavioral data analysis" \
   --explicit "\
-python3 $deriv_dir/code/behavior.py"
+python3 $deriv_dir/code/scripts/behavior.py"
 
 # And we're done
 echo SUCCESS

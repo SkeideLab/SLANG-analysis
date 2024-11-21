@@ -32,7 +32,7 @@ datalad containers-run \
   --output "$deriv_dir/univariate/figures" \
   --message "Run plotting" \
   --explicit "\
-python3 $deriv_dir/code/plotting.py"
+python3 $deriv_dir/code/scripts/plotting.py"
 
 # And we're done
 echo SUCCESS
