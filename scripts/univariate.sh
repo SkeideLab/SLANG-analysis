@@ -22,7 +22,7 @@ datalad containers-run \
   --container-name "python-julia-afni" \
   --dataset "$bids_dir" \
   --input "sub-*" \
-  --input "$deriv_dir/fmriprep" \
+  --input "$deriv_dir/fmriprep/sub-*/ses-*/" \
   --output "$deriv_dir/univariate" \
   --message "Run univariate analysis" \
   --explicit "\
